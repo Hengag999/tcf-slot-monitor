@@ -1,0 +1,4 @@
+node_modules/
+.env
+discord_webhooks.txt
+.env.local
