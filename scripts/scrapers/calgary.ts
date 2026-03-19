@@ -1,64 +1,89 @@
 // Calgary scraper
-// The AFC Calgary booking card is static HTML managed via Oncord CMS.
-// No API available — we scrape the page and detect whether the "Sorry" message
-// is present. When it's gone, slots have opened and we extract whatever booking
-// links/text we can find in the card.
-//
-// TODO: once a live session is observed, inspect the HTML and improve date/link extraction.
+// AFC Calgary registration page (Oncord CMS) shows session cards per month.
+// Each card has a date label (e.g. "April 2026 sessions") and either
+// "SOLD OUT" text or a "Registrations" link.
+// We also follow the registration link to verify the destination isn't a
+// "closed" placeholder — the real registration page won't have "closed" in
+// the URL or page content.
 
 export interface Slot {
   id: string;
-  examType: string;   // best-effort from card heading text
-  date: string;       // best-effort from link text; "unknown" if not parseable
-  bookingUrl: string; // specific booking link if found, else the TCF page URL
+  examType: string;
+  date: string;       // e.g. "June 2026 sessions"
+  bookingUrl: string;
 }
 
-const TCF_PAGE = "https://www.afcalgary.ca/exams/tcf/";
-const NO_SLOTS_MARKER = "Sorry, no dates are available at the moment.";
+const REGISTRATION_PAGE = "https://www.afcalgary.ca/exams/tcf/registration-process/";
+const HEADERS = { "User-Agent": "Mozilla/5.0 (compatible; tcf-slot-monitor/1.0)" };
+
+async function isRegistrationOpen(url: string): Promise<boolean> {
+  try {
+    const res = await fetch(url, { headers: HEADERS, redirect: "follow" });
+    // Check final URL after redirects
+    if (/closed/i.test(res.url)) return false;
+    if (!res.ok) return false;
+    const html = await res.text();
+    // Check page content for closed indicators
+    const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").toLowerCase();
+    if (text.includes("registration is closed") || text.includes("registrations are closed")) return false;
+    return true;
+  } catch {
+    return false; // network error = can't confirm it's open
+  }
+}
 
 export async function scrapeCalgary(): Promise<Slot[]> {
-  const res = await fetch(TCF_PAGE, {
-    headers: { "User-Agent": "Mozilla/5.0 (compatible; tcf-slot-monitor/1.0)" },
-  });
+  const res = await fetch(REGISTRATION_PAGE, { headers: HEADERS });
   if (!res.ok) throw new Error(`Calgary page fetch failed: ${res.status}`);
 
   const html = await res.text();
 
-  if (html.includes(NO_SLOTS_MARKER)) {
-    return []; // nothing open
+  // Narrow to the Step 2 section where session cards live
+  const step2Start = html.indexOf("Step 2");
+  if (step2Start === -1) {
+    throw new Error("Calgary: Step 2 section not found — structure may have changed");
   }
+  const step3Start = html.indexOf("Step 3", step2Start);
+  const sectionHtml = html.slice(step2Start, step3Start !== -1 ? step3Start : undefined);
 
-  // Slots appear to be open — try to extract booking links from the card section.
-  // Best-effort: find <a href="..."> tags in the Step 2 section.
-  // Pattern covers both absolute and relative hrefs that look like booking links.
-  const slots: Slot[] = [];
-  const linkPattern = /<a\s+href="(https?:\/\/[^"]+)"[^>]*>([^<]+)<\/a>/gi;
+  // Split into individual cards (each card is a s8-templates-card div)
+  const cardPattern = /class="s8-templates-card\s+s8-templates-card__cardsize-5">([\s\S]*?)(?=<\/div>\s*<div[^>]*class="s8-templates-card|<\/div>\s*<\/div>\s*<div[^>]*style="margin-top)/g;
+  const candidates: { date: string; bookingUrl: string }[] = [];
   let match: RegExpExecArray | null;
 
-  // Narrow to the Step 2 card block so we don't pick up nav links
-  const step2Start = html.indexOf("Step 2");
-  const step2End = html.indexOf("Step 3", step2Start);
-  const cardHtml = step2Start !== -1 ? html.slice(step2Start, step2End !== -1 ? step2End : undefined) : html;
+  while ((match = cardPattern.exec(sectionHtml)) !== null) {
+    const cardHtml = match[1];
 
-  while ((match = linkPattern.exec(cardHtml)) !== null) {
-    const [, href, text] = match;
-    const cleanText = text.replace(/\s+/g, " ").trim();
-    slots.push({
-      id: `calgary-${Buffer.from(href).toString("base64").slice(0, 12)}`,
-      examType: "TCF Canada",
-      date: cleanText || "unknown",
-      bookingUrl: href,
-    });
+    // Skip cards that are SOLD OUT
+    if (/SOLD\s*OUT/i.test(cardHtml)) continue;
+
+    // Extract session date label (e.g. "June 2026 sessions")
+    // Strip HTML tags and normalize whitespace, then extract the date label
+    const textContent = cardHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+    const dateMatch = textContent.match(/(\w+ \d{4} sessions)/i);
+    const date = dateMatch ? dateMatch[1] : "unknown";
+
+    // Extract registration link if present
+    const linkMatch = cardHtml.match(/<a[^>]+href="([^"]+)"[^>]*>\s*Registrations/i);
+    if (!linkMatch) continue; // no registration link = not bookable
+
+    const href = linkMatch[1];
+    const bookingUrl = href.startsWith("http") ? href : `https://www.afcalgary.ca${href}`;
+
+    candidates.push({ date, bookingUrl });
   }
 
-  // If no links were found but the "Sorry" marker is gone, return a generic signal
-  if (slots.length === 0) {
-    slots.push({
-      id: "calgary-generic",
-      examType: "TCF Canada",
-      date: "unknown",
-      bookingUrl: TCF_PAGE,
-    });
+  // Verify each candidate by following the registration link
+  const slots: Slot[] = [];
+  for (const { date, bookingUrl } of candidates) {
+    if (await isRegistrationOpen(bookingUrl)) {
+      slots.push({
+        id: `calgary-${Buffer.from(date).toString("base64").slice(0, 12)}`,
+        examType: "TCF Canada",
+        date,
+        bookingUrl,
+      });
+    }
   }
 
   return slots;
