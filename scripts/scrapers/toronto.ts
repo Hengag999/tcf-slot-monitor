@@ -1,7 +1,7 @@
 // Toronto scraper
 // Step 1: Fetch session list from Alliance Française CM API (two calls: e-TCF + p-TCF)
 // Step 2: For each session, confirm availability via Active Communities API (space_status)
-// Returns only sessions where space_status !== "Full"
+// Returns only sessions where space_status is not a known non-bookable state
 
 export type ExamType = "E-TCF Canada" | "P-TCF Canada";
 
@@ -62,7 +62,12 @@ async function isAvailable(sessionId: number): Promise<boolean> {
   }
   const data = await res.json();
   const spaceStatus: string | undefined = data?.body?.detail?.space_status;
-  return spaceStatus !== "Full";
+  const NON_BOOKABLE = ["Full", "On Hold"];
+  const blocked = NON_BOOKABLE.includes(spaceStatus ?? "");
+  if (blocked) {
+    console.log(`  [toronto] Session ${sessionId} skipped (space_status: "${spaceStatus}")`);
+  }
+  return !blocked;
 }
 
 function toHHMM(time: string): string {
