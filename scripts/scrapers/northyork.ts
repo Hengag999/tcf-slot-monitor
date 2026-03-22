@@ -14,7 +14,7 @@ export interface Slot {
 
 const API_URL =
   "https://api.gblc.ca/candidates/test-schedules/" +
-  "?location=Toronto&test_id=6&format_id=5&has_available_seats=true";
+  "?test_id=6&format_id=5&has_available_seats=true";
 
 const BOOKING_URL = "https://www.gblc.ca/en/book-now/choose-date";
 
