@@ -34,6 +34,7 @@ Each scraper file in `scripts/scrapers/` follows the same pattern:
 | **Halifax** | AEC platform (`afhalifax.aec.app`) | Extracts public API key from page HTML, then calls examinations API |
 | **Ottawa** | AEC platform (`afottawa.aec.app`) | Same as Halifax; queries two exam type endpoints (IDs 5 and 79) |
 | **Ashton** | WordPress/Elementor form (`ashtontesting.ca`) | Parses radio buttons in `tcf-radio-picker` div; skips `disabled` / "(FULL)" entries |
+| **North York** | GBLC API (`api.gblc.ca`) | Calls test-schedules endpoint with `has_available_seats=true`; returns sessions with open seats |
 
 ### Key patterns
 

@@ -3,6 +3,7 @@ interface SlotInfo {
   bookingUrl: string;
   startTime?: string;
   endTime?: string;
+  availableSeats?: number;
 }
 
 export async function notifyDiscord(
@@ -13,7 +14,8 @@ export async function notifyDiscord(
 ): Promise<void> {
   const slotLines = slots.map((s) => {
     const time = s.startTime && s.endTime ? ` — ${s.startTime} to ${s.endTime}` : "";
-    return `📅 ${s.date}${time}`;
+    const seats = s.availableSeats != null ? ` (${s.availableSeats} seats)` : "";
+    return `📅 ${s.date}${time}${seats}`;
   });
 
   const urls = [...new Set(slots.map((s) => s.bookingUrl))];
