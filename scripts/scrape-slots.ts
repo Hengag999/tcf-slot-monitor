@@ -5,6 +5,8 @@ import { scrapeHalifax } from "./scrapers/halifax";
 import { scrapeOttawa } from "./scrapers/ottawa";
 import { scrapeAshton } from "./scrapers/ashton";
 import { scrapeNorthYork } from "./scrapers/northyork";
+import { scrapeVictoria } from "./scrapers/victoria";
+import { scrapeEdmonton } from "./scrapers/edmonton";
 import { getPrevState, upsertState } from "../src/lib/db";
 import { notifyDiscord } from "../src/lib/discord";
 
@@ -38,6 +40,8 @@ const cities: CityConfig[] = [
   { key: "ottawa", label: "Ottawa", scrape: scrapeOttawa, webhookEnv: "DISCORD_WEBHOOK_OTTAWA" },
   { key: "ashton", label: "Ashton", scrape: scrapeAshton, webhookEnv: "DISCORD_WEBHOOK_ASHTON" },
   { key: "northyork", label: "North York", scrape: scrapeNorthYork, webhookEnv: "DISCORD_WEBHOOK_NORTHYORK", diffByDate: true },
+  { key: "victoria", label: "Victoria", scrape: scrapeVictoria, webhookEnv: "DISCORD_WEBHOOK_VICTORIA", diffByDate: true },
+  { key: "edmonton", label: "Edmonton", scrape: scrapeEdmonton, webhookEnv: "DISCORD_WEBHOOK_EDMONTON", diffByDate: true },
 ];
 
 function groupByExamType(slots: MonitorSlot[]): Record<string, MonitorSlot[]> {

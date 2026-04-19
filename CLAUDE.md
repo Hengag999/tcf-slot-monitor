@@ -35,6 +35,8 @@ Each scraper file in `scripts/scrapers/` follows the same pattern:
 | **Ottawa** | AEC platform (`afottawa.aec.app`) | Same as Halifax; queries two exam type endpoints (IDs 5 and 79) |
 | **Ashton** | WordPress/Elementor form (`ashtontesting.ca`) | Parses radio buttons in `tcf-radio-picker` div; skips `disabled` / "(FULL)" entries |
 | **North York** | GBLC API (`api.gblc.ca`) | Calls test-schedules endpoint with `has_available_seats=true`; returns sessions with open seats |
+| **Victoria** | Oncord CMS (embedded JSON) | Parses `<oncord-combobox>` options after the "Date (Please choose)" label; drops empty-value placeholder and any label matching `/sold out\|complet\|full/i` |
+| **Edmonton** | Oncord CMS (embedded JSON) | Parses `<oncord-combobox>` options after the "choose your session" label; sold-out sessions remain listed with `(Sold out)` suffix, so the same negative-match filter drops them |
 
 ### Key patterns
 

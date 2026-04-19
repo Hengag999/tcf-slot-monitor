@@ -1,0 +1,7 @@
+toronto:https://www.alliance-francaise.ca/en/exams/tests/informations-about-tcf-canada/tcf-canada,
+calgary:https://www.afcalgary.ca/exams/tcf/,
+vancouver:https://www.alliancefrancaise.ca/products/ciep-tcf-canada-full-exam/,
+halifax:https://afhalifax.ca/test-your-french/tcf/tcf-canada-registration/#/,
+ottwa:https://af.ca/ottawa/en/tests_et_examens/tcf/#/,
+victoria:https://www.afvictoria.ca/products/ceip-tcf-canada-full-exam-victoria/,
+edmonton:https://www.afedmonton.com/products/af-tcf-canada/
