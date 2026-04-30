@@ -9,6 +9,12 @@
 // TODO: confirm exam type names (product_name values) once a live session is observed.
 //
 // Availability signal: isFull === false AND mainRegisterLink.link !== ""
+//
+// Empty-state quirk: AEC returns HTTP 204 No Content (empty body) when an
+// endpoint has no examinations to list, rather than an empty array. `res.ok`
+// is true for 204, so the previous `await res.json()` would throw
+// "Unexpected end of JSON input" if either endpoint emptied. Read body as
+// text and short-circuit on empty.
 
 export interface Slot {
   id: string;
@@ -71,7 +77,11 @@ export async function scrapeOttawa(): Promise<Slot[]> {
 
   for (const res of responses) {
     if (!res.ok) throw new Error(`Ottawa: examinations API returned ${res.status} for ${res.url}`);
-    const data: ExaminationType[] = await res.json();
+
+    const body = await res.text();
+    if (body.trim() === "") continue;
+
+    const data: ExaminationType[] = JSON.parse(body);
     const examinations = data[0]?.examinations ?? [];
 
     for (const exam of examinations) {

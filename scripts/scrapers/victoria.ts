@@ -1,14 +1,26 @@
 // Victoria scraper
 // Alliance Française Victoria uses Oncord CMS with an e-commerce product page.
-// The "Date (Please choose):" dropdown is an <oncord-combobox> whose options
-// are embedded as <script type="application/json"> inline in the HTML.
+// When dates are open, a "Date (Please choose):" dropdown is rendered as
+// <oncord-combobox> with options embedded in a <script type="application/json">
+// tag (label = the user-visible date string).
 //
-// When no dates are open the options array is just a placeholder:
-//   [{"value":"","label":"Select…"}]
-// Available dates appear as entries with a non-empty value (label is the
-// user-visible date string). Defensive: also drop any label that contains
-// "sold out" / "complet" / "full" in case the site later mirrors Edmonton's
-// pattern of leaving sold-out dates in the list.
+// When the product is sold out, Oncord removes the combobox entirely and shows
+// "This product isn't available at the moment" — so the previous "find label
+// then parse JSON" approach was throwing on every run, leaving Victoria with
+// no row in the state table at all (never triggered).
+//
+// New strategy (mirrors Vancouver):
+//   1. If the page contains the explicit "isn't available at the moment"
+//      marker, return [] (no slots, no error). This is the steady state when
+//      no exam dates are open.
+//   2. Otherwise, anchor on the "Date (Please choose)" label substring and
+//      parse the next <script type="application/json"> options array.
+//   3. Drop the empty-value placeholder and any label that matches a
+//      "sold out / complet / full" pattern (defensive — in case Victoria
+//      starts mirroring Edmonton's habit of leaving sold-out dates listed
+//      with a "(Sold out)" annotation).
+//   4. Only throw if neither marker nor combobox label is found — structure
+//      changed in a way we don't recognize.
 
 export interface Slot {
   id: string;
@@ -19,8 +31,9 @@ export interface Slot {
 
 const PRODUCT_PAGE =
   "https://www.afvictoria.ca/products/ceip-tcf-canada-full-exam-victoria/";
-const FIELD_LABEL = "Date (Please choose)"; // anchor for the date combobox
-const UNAVAILABLE_MARKER = /\b(sold\s*out|complet|full)\b/i;
+const FIELD_LABEL = "Date (Please choose)";
+const SOLD_OUT_MARKER = /isn'?t available at the moment/i;
+const UNAVAILABLE_LABEL = /\b(sold\s*out|complet|full)\b/i;
 
 interface OncordOption {
   value: string;
@@ -35,10 +48,12 @@ export async function scrapeVictoria(): Promise<Slot[]> {
 
   const html = await res.text();
 
+  if (SOLD_OUT_MARKER.test(html)) return [];
+
   const labelPos = html.indexOf(FIELD_LABEL);
   if (labelPos === -1) {
     throw new Error(
-      `Victoria: "${FIELD_LABEL}" label not found — page structure may have changed`,
+      `Victoria: neither sold-out marker nor "${FIELD_LABEL}" label found — page structure may have changed`,
     );
   }
 
@@ -63,7 +78,7 @@ export async function scrapeVictoria(): Promise<Slot[]> {
   }
 
   const available = options.filter(
-    (opt) => opt.value !== "" && !UNAVAILABLE_MARKER.test(opt.label),
+    (opt) => opt.value !== "" && !UNAVAILABLE_LABEL.test(opt.label),
   );
 
   return available.map((opt) => ({

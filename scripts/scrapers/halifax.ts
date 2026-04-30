@@ -6,6 +6,12 @@
 // Availability signal: isFull === false AND mainRegisterLink.link !== ""
 // All other states (examination_sold_out, kiosque_examination_enrollment_date_over) mean
 // the slot is not bookable right now.
+//
+// Empty-state quirk: when AEC has no examinations to return, it responds with
+// HTTP 204 No Content (empty body) rather than `[]` or `[{"examinations":[]}]`.
+// `res.ok` is true for 204, so passing an empty body to `res.json()` throws
+// "Unexpected end of JSON input". Read the body as text first and treat empty
+// as zero slots.
 
 export interface Slot {
   id: string;
@@ -64,7 +70,10 @@ export async function scrapeHalifax(): Promise<Slot[]> {
   });
   if (!res.ok) throw new Error(`Halifax: examinations API returned ${res.status}`);
 
-  const data: ExaminationType[] = await res.json();
+  const body = await res.text();
+  if (body.trim() === "") return [];
+
+  const data: ExaminationType[] = JSON.parse(body);
   const examinations = data[0]?.examinations ?? [];
 
   const slots: Slot[] = [];

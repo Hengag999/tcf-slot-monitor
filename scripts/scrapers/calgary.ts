@@ -2,9 +2,15 @@
 // AFC Calgary registration page (Oncord CMS) shows session cards per month.
 // Each card has a date label (e.g. "April 2026 sessions") and either
 // "SOLD OUT" text or a "Registrations" link.
-// We also follow the registration link to verify the destination isn't a
-// "closed" placeholder — the real registration page won't have "closed" in
-// the URL or page content.
+// We also follow the registration link to verify the destination has at
+// least one bookable date — AFC sometimes leaves the month-level
+// "Registrations" button visible on the parent page even after every
+// individual exam date inside has filled up. In that case the destination
+// page renders all <div class="exam-card"> blocks with "SOLD OUT" text and
+// no booking link. We treat the registration as closed when every card on
+// the destination is sold out. (We have no live "open" snapshot to confirm
+// the inverse — !SOLD_OUT == open — but accepting that risk: false negatives
+// beat 30 days of false positives.)
 
 export interface Slot {
   id: string;
@@ -26,6 +32,14 @@ async function isRegistrationOpen(url: string): Promise<boolean> {
     // Check page content for closed indicators
     const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").toLowerCase();
     if (text.includes("registration is closed") || text.includes("registrations are closed")) return false;
+
+    // Per-date check: split exam-cards and require at least one without "SOLD OUT".
+    // The split discards the preamble (slice(1)); each remaining slice is one card's HTML.
+    const cardChunks = html.split(/<div class="exam-card"/i).slice(1);
+    if (cardChunks.length > 0) {
+      const hasOpenCard = cardChunks.some((c) => !/sold\s*out/i.test(c));
+      if (!hasOpenCard) return false;
+    }
     return true;
   } catch {
     return false; // network error = can't confirm it's open

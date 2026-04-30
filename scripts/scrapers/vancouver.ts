@@ -1,22 +1,37 @@
 // Vancouver scraper
 // Alliance Française Vancouver uses Oncord CMS with an e-commerce product page.
-// The "Date" dropdown is an <oncord-combobox> whose options are embedded as
-// <script type="application/json"> inline in the HTML — no separate API call needed.
+// When dates are open, a "Date (Please choose) - Full if none listed" combobox
+// is rendered as <oncord-combobox> with options embedded in a
+// <script type="application/json"> tag (e.g. {"value":"...","label":"Mercredi 01 Avril 2026"}).
 //
-// When no dates are available the array is [].
-// When dates open up it becomes e.g. [{"value":"April 15, 2026","label":"April 15, 2026"}, ...]
+// When the product is sold out, Oncord removes the combobox entirely and
+// renders "This product can't be ordered online" instead — so the previous
+// "find combobox by ID" approach was throwing for the past 9 days, freezing
+// state at the last successful scrape (30 stale slots).
 //
-// TODO: confirm exact label format once a live session is observed.
+// New strategy:
+//   1. If the page contains the explicit "can't be ordered online" marker,
+//      return [] (no slots, no error).
+//   2. Otherwise, anchor on the "Date (Please choose)" label substring and
+//      parse the next <script type="application/json"> options array. This is
+//      the same pattern Victoria/Edmonton use and is more durable than
+//      hard-coded combobox IDs (which Oncord derives from the field label and
+//      may rotate if the label changes).
+//   3. Only throw if neither marker nor combobox is found — that means the
+//      page structure changed in a way we don't recognize and we want to be
+//      loud about it.
 
 export interface Slot {
   id: string;
   examType: "TCF Canada";
-  date: string;       // raw label from Oncord option (e.g. "April 15, 2026")
+  date: string;       // raw label from Oncord option (e.g. "Mercredi 01 Avril 2026")
   bookingUrl: string;
 }
 
 const PRODUCT_PAGE = "https://www.alliancefrancaise.ca/products/ciep-tcf-canada-full-exam/";
-const COMBOBOX_ID = "combo_Date__Please_choose___Full_if_none_listed_";
+const FIELD_LABEL = "Date (Please choose)";
+const SOLD_OUT_MARKER = /can'?t be ordered online/i;
+const UNAVAILABLE_LABEL = /\b(sold\s*out|complet|full)\b/i;
 
 interface OncordOption {
   value: string;
@@ -31,25 +46,38 @@ export async function scrapeVancouver(): Promise<Slot[]> {
 
   const html = await res.text();
 
-  // Locate the combobox for the date field and extract its embedded JSON options
-  const comboboxStart = html.indexOf(`id="${COMBOBOX_ID}"`);
-  if (comboboxStart === -1) {
-    throw new Error("Vancouver: date combobox not found in page — structure may have changed");
+  if (SOLD_OUT_MARKER.test(html)) return [];
+
+  const labelPos = html.indexOf(FIELD_LABEL);
+  if (labelPos === -1) {
+    throw new Error(
+      `Vancouver: neither sold-out marker nor "${FIELD_LABEL}" label found — page structure may have changed`,
+    );
   }
 
-  // The JSON options are in the first <script type="application/json"> after the combobox
-  const scriptOpen = html.indexOf('<script type="application/json">', comboboxStart);
+  const scriptOpenTag = '<script type="application/json">';
+  const scriptOpen = html.indexOf(scriptOpenTag, labelPos);
   const scriptClose = html.indexOf("</script>", scriptOpen);
   if (scriptOpen === -1 || scriptClose === -1) {
-    throw new Error("Vancouver: JSON options script tag not found — structure may have changed");
+    throw new Error(
+      "Vancouver: JSON options script tag not found after date label — structure may have changed",
+    );
   }
 
-  const raw = html.slice(scriptOpen + '<script type="application/json">'.length, scriptClose).trim();
-  const options: OncordOption[] = JSON.parse(raw);
+  const raw = html.slice(scriptOpen + scriptOpenTag.length, scriptClose).trim();
 
-  if (options.length === 0) return [];
+  let options: OncordOption[];
+  try {
+    options = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(`Vancouver: failed to parse options JSON: ${err}`);
+  }
 
-  return options.map((opt) => ({
+  const available = options.filter(
+    (opt) => opt.value !== "" && !UNAVAILABLE_LABEL.test(opt.label),
+  );
+
+  return available.map((opt) => ({
     id: `vancouver-${Buffer.from(opt.value).toString("base64").slice(0, 12)}`,
     examType: "TCF Canada",
     date: opt.label,
