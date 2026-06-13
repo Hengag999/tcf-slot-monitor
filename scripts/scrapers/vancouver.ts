@@ -1,101 +1,116 @@
 // Vancouver scraper
-// Alliance Française Vancouver uses Oncord CMS with an e-commerce product page.
-// When dates are open, a "Date (Please choose) - Full if none listed" combobox
-// is rendered as <oncord-combobox> with options embedded in a
-// <script type="application/json"> tag (e.g. {"value":"...","label":"Mercredi 01 Avril 2026"}).
 //
-// When the product is sold out, Oncord removes the combobox entirely and
-// renders "This product can't be ordered online" instead — so the previous
-// "find combobox by ID" approach was throwing for the past 9 days, freezing
-// state at the last successful scrape (30 stale slots).
+// AF Vancouver migrated off the old Oncord product page (the
+// /products/ciep-tcf-canada-full-exam/ combobox) to a new "exam-selector"
+// platform. The old product URL now 301-redirects to a dead "...-classic" slug,
+// which is why the previous combobox scraper threw on every run.
 //
-// New strategy:
-//   1. If the page contains the explicit "can't be ordered online" marker,
-//      return [] (no slots, no error).
-//   2. Otherwise, anchor on the "Date (Please choose)" label substring and
-//      parse the next <script type="application/json"> options array. This is
-//      the same pattern Victoria/Edmonton use and is more durable than
-//      hard-coded combobox IDs (which Oncord derives from the field label and
-//      may rotate if the label changes).
-//   3. Only throw if neither marker nor combobox is found — that means the
-//      page structure changed in a way we don't recognize and we want to be
-//      loud about it.
+// The current source of truth is the TCF-Canada exam listing table:
+//   https://www.alliancefrancaise.ca/en/language/exams/tcf-canada/
+// Each exam is a <tr class="tableRow"> with columns:
+//   Exam | Schedules | Registration Dates | Location | Spots left | Price | Bookings
+// The Bookings cell carries the machine-readable registration-open time as a unix
+// epoch: <span class="es-status es-status-..." data-opens-at="1781550000">.
+//
+// Unlike every other city, Vancouver does NOT return "currently bookable" slots.
+// It returns every exam ROW on the page (with its registration-open epoch), and
+// the reminder engine in src/lib/vancouverReminders.ts decides what to notify.
+// See that file for the rationale (spots vanish in seconds; reminders beat
+// real-time detection on a coarse cron).
 
-export interface Slot {
-  id: string;
-  examType: "TCF Canada";
-  date: string;       // raw label from Oncord option (e.g. "Mercredi 01 Avril 2026")
-  bookingUrl: string;
+import type { VancouverExam } from "../../src/lib/vancouverReminders";
+
+const LISTING_PAGE = "https://www.alliancefrancaise.ca/en/language/exams/tcf-canada/";
+const HEADERS = { "User-Agent": "Mozilla/5.0 (compatible; tcf-slot-monitor/1.0)" };
+
+function stripTags(s: string): string {
+  return s
+    .replace(/<svg[\s\S]*?<\/svg>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-const PRODUCT_PAGE = "https://www.alliancefrancaise.ca/products/ciep-tcf-canada-full-exam/";
-const FIELD_LABEL = "Date (Please choose)";
-const SOLD_OUT_MARKER = /can'?t be ordered online/i;
-const UNAVAILABLE_LABEL = /\b(sold\s*out|complet|full)\b/i;
-
-interface OncordOption {
-  value: string;
-  label: string;
+function absUrl(href: string): string {
+  if (/^https?:\/\//i.test(href)) return href;
+  return "https://www.alliancefrancaise.ca" + (href.startsWith("/") ? href : `/${href}`);
 }
 
-export async function scrapeVancouver(): Promise<Slot[]> {
-  const res = await fetch(PRODUCT_PAGE, {
-    headers: { "User-Agent": "Mozilla/5.0 (compatible; tcf-slot-monitor/1.0)" },
-  });
+export async function scrapeVancouver(): Promise<VancouverExam[]> {
+  const res = await fetch(LISTING_PAGE, { headers: HEADERS, redirect: "follow" });
   if (!res.ok) throw new Error(`Vancouver page fetch failed: ${res.status}`);
-
   const html = await res.text();
 
-  if (SOLD_OUT_MARKER.test(html)) return [];
-
-  const labelPos = html.indexOf(FIELD_LABEL);
-  if (labelPos === -1) {
-    throw new Error(
-      `Vancouver: neither sold-out marker nor "${FIELD_LABEL}" label found — page structure may have changed`,
-    );
+  // The table renders each exam as <tr class="tableRow">. If neither the row
+  // marker nor the exam-title class is present, the page structure changed —
+  // throw so the health check surfaces it (a frozen checked_at), rather than
+  // silently reporting zero exams.
+  if (!/<tr class="tableRow">/i.test(html) && !/class="es-exam-title"/i.test(html)) {
+    throw new Error("Vancouver: exam table not found — page structure may have changed");
   }
 
-  const scriptOpenTag = '<script type="application/json">';
-  const scriptOpen = html.indexOf(scriptOpenTag, labelPos);
-  const scriptClose = html.indexOf("</script>", scriptOpen);
-  if (scriptOpen === -1 || scriptClose === -1) {
-    throw new Error(
-      "Vancouver: JSON options script tag not found after date label — structure may have changed",
-    );
+  const exams: VancouverExam[] = [];
+  for (const row of html.matchAll(/<tr class="tableRow">([\s\S]*?)<\/tr>/gi)) {
+    const cells = [...row[1].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)].map((m) => m[1]);
+    if (cells.length < 7) continue;
+
+    const label = stripTags(cells[0]);
+    if (!/tcf/i.test(label)) continue; // ignore any non-TCF rows defensively
+
+    const schedule = stripTags(cells[1]);
+    const registrationWindow = stripTags(cells[2]);
+
+    const spotsText = stripTags(cells[4]);
+    const spotsMatch = spotsText.match(/\d+/);
+    const spotsLeft = spotsMatch ? parseInt(spotsMatch[0], 10) : null;
+
+    const bookings = cells[6];
+    const statusClass = (bookings.match(/class="es-status\s+(es-status-[a-z-]+)/i) || [, "es-status-unknown"])[1];
+    const opensAt = bookings.match(/data-opens-at="(\d+)"/i);
+    const registrationOpensAt = opensAt ? parseInt(opensAt[1], 10) : null;
+
+    const href = (bookings.match(/href="([^"]+)"/i) || cells[0].match(/href="([^"]+)"/i) || [])[1];
+    const bookingUrl = href ? absUrl(href) : LISTING_PAGE;
+
+    const examKey = `tcf-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}`;
+
+    exams.push({
+      id: examKey,
+      examType: "TCF Canada",
+      date: label,
+      bookingUrl,
+      examKey,
+      label,
+      schedule,
+      registrationWindow,
+      registrationOpensAt,
+      spotsLeft,
+      statusClass,
+    });
   }
 
-  const raw = html.slice(scriptOpen + scriptOpenTag.length, scriptClose).trim();
-
-  let options: OncordOption[];
-  try {
-    options = JSON.parse(raw);
-  } catch (err) {
-    throw new Error(`Vancouver: failed to parse options JSON: ${err}`);
-  }
-
-  const available = options.filter(
-    (opt) => opt.value !== "" && !UNAVAILABLE_LABEL.test(opt.label),
-  );
-
-  return available.map((opt) => ({
-    id: `vancouver-${Buffer.from(opt.value).toString("base64").slice(0, 12)}`,
-    examType: "TCF Canada",
-    date: opt.label,
-    bookingUrl: PRODUCT_PAGE,
-  }));
+  return exams;
 }
 
 // --- Local dry-run ---
 if (process.argv[1].endsWith("vancouver.ts")) {
   scrapeVancouver()
-    .then((slots) => {
-      if (slots.length === 0) {
-        console.log("[vancouver] No available slots found.");
+    .then((exams) => {
+      if (exams.length === 0) {
+        console.log("[vancouver] No exams listed on the page.");
       } else {
-        console.log(`\n[vancouver] ${slots.length} available slot(s):\n`);
-        for (const s of slots) {
-          console.log(`  [${s.examType}] ${s.date}`);
-          console.log(`  ${s.bookingUrl}\n`);
+        console.log(`\n[vancouver] ${exams.length} exam(s):\n`);
+        for (const e of exams) {
+          const opens = e.registrationOpensAt
+            ? new Date(e.registrationOpensAt * 1000).toISOString()
+            : "n/a";
+          console.log(`  ${e.label}`);
+          console.log(`    schedule: ${e.schedule}`);
+          console.log(`    registration: ${e.registrationWindow}`);
+          console.log(`    opens-at: ${opens} | status: ${e.statusClass} | spots: ${e.spotsLeft}`);
+          console.log(`    ${e.bookingUrl}\n`);
         }
       }
     })

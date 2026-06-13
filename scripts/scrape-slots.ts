@@ -10,6 +10,7 @@ import { scrapeVictoria } from "./scrapers/victoria";
 import { scrapeEdmonton } from "./scrapers/edmonton";
 import { getPrevState, upsertState } from "../src/lib/db";
 import { notifyDiscord } from "../src/lib/discord";
+import { runVancouverReminders, type VancouverExam } from "../src/lib/vancouverReminders";
 
 // Common shape that all scrapers satisfy
 interface MonitorSlot {
@@ -29,6 +30,9 @@ interface CityConfig {
   webhookEnv: string;
   // When true, notify per newly-appeared date instead of only on 0→N
   diffByDate?: boolean;
+  // When true, the city runs the registration-reminder engine instead of the
+  // availability diff (Vancouver — see src/lib/vancouverReminders.ts).
+  reminderMode?: boolean;
 }
 
 const DRY_RUN = process.argv.includes("--dry-run");
@@ -36,7 +40,7 @@ const DRY_RUN = process.argv.includes("--dry-run");
 const cities: CityConfig[] = [
   { key: "toronto", label: "Toronto", scrape: scrapeToronto, webhookEnv: "DISCORD_WEBHOOK_TORONTO" },
   { key: "calgary", label: "Calgary", scrape: scrapeCalgary, webhookEnv: "DISCORD_WEBHOOK_CALGARY" },
-  { key: "vancouver", label: "Vancouver", scrape: scrapeVancouver, webhookEnv: "DISCORD_WEBHOOK_VANCOUVER" },
+  { key: "vancouver", label: "Vancouver", scrape: scrapeVancouver, webhookEnv: "DISCORD_WEBHOOK_VANCOUVER", reminderMode: true },
   { key: "halifax", label: "Halifax", scrape: scrapeHalifax, webhookEnv: "DISCORD_WEBHOOK_HALIFAX" },
   { key: "ottawa", label: "Ottawa", scrape: scrapeOttawa, webhookEnv: "DISCORD_WEBHOOK_OTTAWA" },
   { key: "ashton", label: "Ashton", scrape: scrapeAshton, webhookEnv: "DISCORD_WEBHOOK_ASHTON" },
@@ -62,6 +66,16 @@ async function main() {
       allSlots = await city.scrape();
     } catch (err) {
       console.error(`[${city.key}] Scraper error, skipping:`, err);
+      continue;
+    }
+
+    // Vancouver runs the registration-reminder engine, not the availability diff.
+    if (city.reminderMode) {
+      await runVancouverReminders(
+        allSlots as unknown as VancouverExam[],
+        process.env[city.webhookEnv],
+        DRY_RUN,
+      );
       continue;
     }
 
