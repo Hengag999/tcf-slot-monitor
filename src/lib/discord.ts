@@ -13,16 +13,16 @@ export async function notifyDiscord(
   slots: SlotInfo[],
 ): Promise<void> {
   const slotLines = slots.map((s) => {
-    const time = s.startTime && s.endTime ? ` — ${s.startTime} to ${s.endTime}` : "";
-    const seats = s.availableSeats != null ? ` (${s.availableSeats} seats)` : "";
+    const time = s.startTime && s.endTime ? ` ${s.startTime}–${s.endTime}` : "";
+    const seats = s.availableSeats != null ? ` · 剩 ${s.availableSeats} 个名额` : "";
     return `📅 ${s.date}${time}${seats}`;
   });
 
   const urls = [...new Set(slots.map((s) => s.bookingUrl))];
-  const urlLines = urls.map((u) => `👉 ${u}`);
+  const urlLines = urls.map((u) => `👉 立即报名：${u}`);
 
   const content = [
-    `@everyone 🗓️ New **${examType}** slot(s) — **${cityLabel}**!`,
+    `@everyone 🗓️ **${cityLabel}** 新开放 **${examType}** 考位，手慢无！`,
     "",
     ...slotLines,
     "",

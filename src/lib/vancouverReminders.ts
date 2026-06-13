@@ -121,49 +121,51 @@ function makePing(ex: VancouverExam, kind: ReminderPing["kind"]): ReminderPing {
 }
 
 export function formatPacific(epochSec: number | null): string {
-  if (epochSec == null) return "an unannounced time";
-  return new Intl.DateTimeFormat("en-CA", {
+  if (epochSec == null) return "时间待定";
+  const formatted = new Intl.DateTimeFormat("zh-CN", {
     timeZone: "America/Vancouver",
-    weekday: "short",
-    month: "short",
+    year: "numeric",
+    month: "long",
     day: "numeric",
-    hour: "numeric",
+    weekday: "short",
+    hour: "2-digit",
     minute: "2-digit",
-    timeZoneName: "short",
+    hour12: false,
   }).format(new Date(epochSec * 1000));
+  return `${formatted}（温哥华时间）`;
 }
 
 function formatCountdown(epochSec: number | null, nowMs: number): string {
   if (epochSec == null) return "";
   let s = Math.round((epochSec * 1000 - nowMs) / 1000);
-  if (s <= 0) return "now";
+  if (s <= 0) return "";
   const d = Math.floor(s / 86400);
   s -= d * 86400;
   const h = Math.floor(s / 3600);
   s -= h * 3600;
   const m = Math.floor(s / 60);
   const parts: string[] = [];
-  if (d) parts.push(`${d}d`);
-  if (h) parts.push(`${h}h`);
-  if (!d && m) parts.push(`${m}m`);
-  return parts.join(" ") || "<1m";
+  if (d) parts.push(`${d}天`);
+  if (h) parts.push(`${h}小时`);
+  if (!d && m) parts.push(`${m}分钟`);
+  return parts.join("") || "不到 1 分钟";
 }
 
 export function formatPings(pings: ReminderPing[], nowMs: number): string {
-  const lines: string[] = ["@everyone 🇫🇷 **TCF Vancouver — registration update**", ""];
+  const lines: string[] = ["@everyone 🇫🇷 **温哥华 TCF Canada · 报名提醒**", ""];
   for (const p of pings) {
     const when = formatPacific(p.registrationOpensAt);
     const cd = formatCountdown(p.registrationOpensAt, nowMs);
-    const spots = p.spotsLeft != null ? ` · ${p.spotsLeft} spots left` : "";
+    const spots = p.spotsLeft != null ? ` · 剩 ${p.spotsLeft} 个名额` : "";
     if (p.kind === "new") {
-      lines.push(`🆕 **New session posted:** ${p.label}`);
-      lines.push(`   Registration opens **${when}**${cd ? ` (in ${cd})` : ""}${spots}.`);
+      lines.push(`🆕 **新场次上线：** ${p.label}`);
+      lines.push(`　报名将于 **${when}** 开放${cd ? `（还有 ${cd}）` : ""}${spots}。`);
     } else {
-      const label = p.kind === "3d" ? "3 days" : p.kind === "2d" ? "2 days" : "1 day";
-      lines.push(`⏰ **~${label} until registration:** ${p.label}`);
-      lines.push(`   Opens **${when}**${cd ? ` (in ${cd})` : ""}${spots} — be ready, spots go fast.`);
+      const label = p.kind === "3d" ? "3 天" : p.kind === "2d" ? "2 天" : "1 天";
+      lines.push(`⏰ **距报名开放约 ${label}：** ${p.label}`);
+      lines.push(`　报名将于 **${when}** 开放${cd ? `（还有 ${cd}）` : ""}${spots} —— 请提前准备，名额秒空。`);
     }
-    lines.push(`   👉 ${p.bookingUrl}`);
+    lines.push(`　👉 ${p.bookingUrl}`);
     lines.push("");
   }
   return lines.join("\n").trim();
