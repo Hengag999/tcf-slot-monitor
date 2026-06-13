@@ -35,10 +35,30 @@ async function isRegistrationOpen(url: string): Promise<boolean> {
 
     // Per-date check: split exam-cards and require at least one without "SOLD OUT".
     // The split discards the preamble (slice(1)); each remaining slice is one card's HTML.
-    const cardChunks = html.split(/<div class="exam-card"/i).slice(1);
+    // The class match tolerates a modifier class (e.g. class="exam-card available") so an
+    // open date that carries a state class still gets isolated into its own chunk — a bare
+    // /<div class="exam-card"/ split would fail to break it out and merge it into the
+    // neighbouring (sold-out) chunk, silently missing the opening. The quote/space token
+    // boundaries keep it from matching wrapper classes such as "exam-cards".
+    const cardChunks = html.split(/<div class="(?:[^"]*\s)?exam-card(?:\s[^"]*)?"/i).slice(1);
+
+    // Diagnostic logging: the open-detection path has never fired under the current code and
+    // there is no archived "open" snapshot to validate it against. Log every destination
+    // check (these only run for a candidate month) so the next genuine opening captures the
+    // real open-state markup. `classes` surfaces any modifier class the split must handle.
+    const classes = [...new Set([...html.matchAll(/class="([^"]*exam-card[^"]*)"/gi)].map((m) => m[1]))];
+    const openCards = cardChunks.filter((c) => !/sold\s*out/i.test(c));
+    console.log(
+      `[calgary:dest] ${url} cards=${cardChunks.length} open=${openCards.length} classes=${JSON.stringify(classes)}`,
+    );
+
     if (cardChunks.length > 0) {
-      const hasOpenCard = cardChunks.some((c) => !/sold\s*out/i.test(c));
-      if (!hasOpenCard) return false;
+      if (openCards.length === 0) return false;
+      // First time we ever see a non-sold-out card, dump its markup so the
+      // "absence of SOLD OUT == open" heuristic can be confirmed or replaced.
+      for (const c of openCards) {
+        console.log(`[calgary:OPEN-MARKUP] ${url}\n${c.slice(0, 600)}`);
+      }
     }
     return true;
   } catch {
@@ -90,6 +110,10 @@ export async function scrapeCalgary(): Promise<Slot[]> {
   // Verify each candidate by following the registration link
   const slots: Slot[] = [];
   for (const { date, bookingUrl } of candidates) {
+    // Record the parent-side opening signal: a month whose "Registrations" button is
+    // visible (not SOLD OUT at month level). Pairs with the [calgary:dest] line to show
+    // whether the month-level signal actually had bookable dates behind it.
+    console.log(`[calgary:candidate] "${date}" -> ${bookingUrl}`);
     if (await isRegistrationOpen(bookingUrl)) {
       slots.push({
         id: `calgary-${Buffer.from(date).toString("base64").slice(0, 12)}`,
