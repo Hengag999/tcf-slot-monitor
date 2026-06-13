@@ -47,7 +47,7 @@ fully replaces the old 0→N availability ping for Vancouver.
   `computeReminders` (`THRESHOLDS` + a kind for lead 0) if wanted.
 
 ## Incident log
-- **2026-06-13** (`<commit>`) — DB `checked_at` ~10h stale; dry-run threw "neither
+- **2026-06-13** (`8d86a5c`) — DB `checked_at` ~10h stale; dry-run threw "neither
   sold-out marker nor 'Date (Please choose)' label found". Cause: AF Vancouver migrated
   off the Oncord product combobox to the exam-selector platform overnight; old URL 301s
   to a dead slug. **Rebuilt** Vancouver as a registration-reminder city: new table
