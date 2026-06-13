@@ -9,6 +9,13 @@
 // An available session will NOT have a "(sold out)" annotation in its label.
 // Keep the filter as "label does NOT match /sold out/i AND value is non-empty"
 // so we accept both plain labels and any future price-annotated labels.
+//
+// When the ENTIRE product is sold out (not just individual dates), Oncord goes a
+// step further and removes the combobox altogether, rendering a
+// "<strong>SOLD OUT!</strong>" badge in the order controls. The session label is
+// then absent, so — mirroring Victoria/Vancouver — detect that badge and return
+// [] gracefully instead of throwing. (A throw skips the city and freezes its DB
+// state; that is exactly what silently broke Edmonton from 2026-05-29 onward.)
 
 export interface Slot {
   id: string;
@@ -19,7 +26,12 @@ export interface Slot {
 
 const PRODUCT_PAGE = "https://www.afedmonton.com/products/af-tcf-canada/";
 const FIELD_LABEL = "choose your session"; // matched case-insensitively
-const UNAVAILABLE_MARKER = /\b(sold\s*out|complet|full)\b/i;
+const UNAVAILABLE_MARKER = /\b(sold\s*out|complet|full)\b/i; // filters individual option labels
+// Product-level sold-out badge shown when the combobox is removed. Match the
+// <strong> tag specifically: a bare "sold out" is unreliable here because the
+// available state leaves dates listed with a "(Sold out)" suffix (and "complet"
+// matches "complete your registration" in the sold-out page's body text).
+const SOLD_OUT_BADGE = /<strong>\s*sold\s*out/i;
 
 interface OncordOption {
   value: string;
@@ -36,8 +48,16 @@ export async function scrapeEdmonton(): Promise<Slot[]> {
 
   const labelPos = html.toLowerCase().indexOf(FIELD_LABEL.toLowerCase());
   if (labelPos === -1) {
+    // Combobox absent. If the order controls show the SOLD OUT! badge, the
+    // product is simply sold out — return [] (the steady state) instead of
+    // throwing, which would skip the city and freeze its state in the DB.
+    // Only throw when we recognise NEITHER the session label NOR the badge.
+    if (SOLD_OUT_BADGE.test(html)) {
+      console.log("[edmonton] product sold out (session combobox removed) — 0 available");
+      return [];
+    }
     throw new Error(
-      `Edmonton: "${FIELD_LABEL}" label not found — page structure may have changed`,
+      `Edmonton: neither "${FIELD_LABEL}" label nor sold-out badge found — page structure may have changed`,
     );
   }
 
