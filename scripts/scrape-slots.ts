@@ -1,3 +1,4 @@
+import "../src/lib/env"; // load .env.local before anything reads process.env
 import { scrapeToronto } from "./scrapers/toronto";
 import { scrapeCalgary } from "./scrapers/calgary";
 import { scrapeVancouver } from "./scrapers/vancouver";
