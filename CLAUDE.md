@@ -43,6 +43,8 @@ No test framework is configured (`npm test` is a placeholder that exits 1). Ther
 
 In `--dry-run` mode, steps 3–5 read nothing and write nothing: prev state is treated as empty, and notifications are printed to stdout instead of sent.
 
+**Per-city error isolation.** The scrape error in step 1 isn't the only thing caught: steps 2–5 run inside their own per-city `try/catch` too, so a Discord or DB failure for one city is logged and skipped instead of aborting the run mid-loop (which used to leave later cities unprocessed and the failing city's state unwritten, so it re-fired forever). Scrape failures stay silent (sites change — tolerated by design); notify/persist failures are *collected* and, after every city has had its turn, the run `throw`s and exits non-zero so genuine infra breakage (Discord 5xx, DB down) still surfaces as a CI failure alert.
+
 ### Notification strategies
 
 Diff strategies, selected per city by a flag in the `cities` config:
@@ -82,6 +84,8 @@ slot_monitor_state(city TEXT, exam_type TEXT, slots JSONB, checked_at TIMESTAMPT
 ### Discord notifier
 
 `src/lib/discord.ts` → `notifyDiscord(webhookUrl, cityLabel, examType, slots)` builds an `@everyone` message listing each slot's date (plus time/seat count when present) and the de-duplicated booking URL(s), then POSTs it. A non-2xx webhook response throws.
+
+**2000-char limit / chunking.** Discord rejects any `content` over 2000 characters with a 400. A heavy day (e.g. Halifax opening 40+ sittings at once, or a North York date dump) easily exceeds that. `postDiscord` — the single send choke point for *both* `notifyDiscord` and Vancouver's reminders — splits over-long content into multiple ≤2000-char messages on line boundaries; only the first chunk carries `@everyone`, so a split message still pings once. Budgeting by JS string `.length` is deliberately conservative (UTF-16 length ≥ Discord's character count).
 
 ### Scraper contract
 
