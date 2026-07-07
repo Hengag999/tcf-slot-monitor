@@ -7,17 +7,19 @@
 | **Page(s)** | `https://www.alliancefrancaise.ca/en/language/exams/tcf-canada/` |
 | **Discord** | #vancouver (bot "Vancouver Bot") |
 | **DB key** | city=`vancouver`, exam_type=`TCF Canada` (the `slots` JSONB holds reminder tracking, not slots) |
-| **Status** | ✅ rebuilt to reminder model — last assessed 2026-06-13 |
+| **Status** | ✅ healthy — reminder chains verified firing live (new/3d/2d/1d) — last assessed 2026-07-07 |
 
 ## How it works
-- `scrapeVancouver()` returns **every exam row** on the TCF-Canada listing table (a
-  `VancouverExam[]`), not "bookable slots". Columns: Exam · Schedules · Registration
+- `scrapeVancouver()` returns **every exam row** on the TCF-Canada listing table
+  whose Location column is **not Victoria's** (the same platform hosts AF Victoria —
+  see `docs/scrapers/victoria.md`; parsing is shared in `src/lib/examSelector.ts`),
+  not "bookable slots". Columns: Exam · Schedules · Registration
   Dates · Location · Spots left · Price · Bookings.
 - The **Bookings cell** carries the machine-readable state:
   `<span class="es-status es-status-… " data-opens-at="<unix epoch>">`. The epoch is
   the exact registration-open time (no Pacific-timezone parsing needed); the
   `es-status-*` class is captured for diagnostics.
-- The reminder engine (`src/lib/vancouverReminders.ts`, `computeReminders`) decides
+- The reminder engine (`src/lib/registrationReminders.ts`, `computeReminders`) decides
   pings: a one-off **new-session** ping the first time a row appears, then **3d / 2d /
   1d** reminders before `registrationOpensAt`. Sub-day reminders are intentionally
   omitted (the GH Actions cron can't hit them). Only the **most recent passed
@@ -37,16 +39,26 @@ fully replaces the old 0→N availability ping for Vancouver.
   `/products/ciep-tcf-canada-full-exam/` now **301s to a dead `…-classic` slug**
   ("Product Not Found"), so the old combobox scraper threw every run. The live product
   is the exam-selector; the listing table is the durable source.
-- **Open-state Bookings markup is unobserved.** Today every row is `es-status-opens-soon`
-  ("Opens in …"). The exact markup once registration is OPEN (Jun 15) isn't known — but
-  the reminder model doesn't depend on it (reminders count down to the epoch). The
-  `bookingUrl` falls back to the listing page when the Bookings cell has no link.
+- **Observed `es-status-*` states so far** (2026-07-07): `es-status-opens-soon`
+  (pre-open, carries `data-opens-at`), `es-status-full`, `es-status-closed`. Rows in
+  full/closed state carry **no `data-opens-at`** → `registrationOpensAt: null`. A row
+  first sighted in that state gets a new-session ping showing the human registration
+  window (fixed 2026-07-07; previously said "时间待定"). The truly-OPEN markup is still
+  unobserved — the reminder model doesn't depend on it. The `bookingUrl` falls back to
+  the listing page when the Bookings cell has no link.
 - **Sub-day reminders are deliberately absent** — don't "fix" their absence; the cron
   can't deliver them reliably.
 - **No open-now ping** by design (decided 2026-06-13). Easy to re-add in
   `computeReminders` (`THRESHOLDS` + a kind for lead 0) if wanted.
 
 ## Incident log
+- **2026-07-07** — health check: reminder chains confirmed firing live in #vancouver
+  (new-session Jun 19, then 3d Jun 19 / 2d Jun 20 / 1d Jun 21 for the Sep 9–28 block;
+  3d Jul 3 / 2d Jul 4 / 1d Jul 5 for Oct 2/5). Refactor: parsing moved to
+  `src/lib/examSelector.ts` + Location filter (NOT-Victoria) so AF Victoria (now on
+  the same platform) gets its own rows; engine generalised to
+  `src/lib/registrationReminders.ts`. Behaviour unchanged for Vancouver except the
+  null-opens-at new-session copy (see above).
 - **2026-06-13** (`8d86a5c`) — DB `checked_at` ~10h stale; dry-run threw "neither
   sold-out marker nor 'Date (Please choose)' label found". Cause: AF Vancouver migrated
   off the Oncord product combobox to the exam-selector platform overnight; old URL 301s

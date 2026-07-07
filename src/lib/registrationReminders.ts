@@ -1,12 +1,12 @@
-// Vancouver reminder engine.
+// Registration-reminder engine (Vancouver + Victoria).
 //
-// AF Vancouver migrated off the Oncord product-combobox to a new "exam-selector"
-// platform. The TCF exam listing now advertises each exam's *registration-open*
-// time in advance (a unix epoch in `data-opens-at`). Because spots vanish within
-// seconds of opening and the GitHub Actions cron is too coarse/unreliable to
-// catch the instant of availability, Vancouver no longer pings on availability.
-// Instead it pings **reminders ahead of each exam's registration-open time** so
-// candidates are poised to book the moment registration opens.
+// The AF "exam-selector" platform (alliancefrancaise.ca) advertises each exam's
+// *registration-open* time in advance (a unix epoch in `data-opens-at`). Because
+// spots vanish within seconds of opening and the GitHub Actions cron is too
+// coarse/unreliable to catch the instant of availability, exam-selector cities
+// don't ping on availability. Instead they ping **reminders ahead of each exam's
+// registration-open time** so candidates are poised to book the moment
+// registration opens.
 //
 // Reminder schedule (per exam): a one-off "new session" ping the first time a row
 // appears, then 3-day / 2-day / 1-day reminders before `registrationOpensAt`.
@@ -14,13 +14,13 @@
 // run only the MOST RECENT passed threshold fires (earlier missed ones are marked
 // done, never back-fired), so a delayed/recovered cron sends one ping, not a burst.
 //
-// State persists in the existing slot_monitor_state row for vancouver: the `slots`
+// State persists in the existing slot_monitor_state row for the city: the `slots`
 // JSONB column holds the tracking array below (no schema migration needed).
 
 import { getPrevState, upsertState } from "./db";
 import { postDiscord } from "./discord";
 
-export interface VancouverExam {
+export interface RegistrationExam {
   // MonitorSlot-compatible fields (so it flows through the orchestrator's scrape type)
   id: string;
   examType: "TCF Canada";
@@ -48,6 +48,7 @@ export interface ReminderPing {
   label: string;
   kind: "new" | "3d" | "2d" | "1d";
   registrationOpensAt: number | null;
+  registrationWindow: string;
   spotsLeft: number | null;
   bookingUrl: string;
 }
@@ -65,7 +66,7 @@ const THRESHOLDS: { key: "3d" | "2d" | "1d"; leadMs: number }[] = [
  * updated tracking. No I/O — unit-testable.
  */
 export function computeReminders(
-  exams: VancouverExam[],
+  exams: RegistrationExam[],
   prevTracking: TrackingEntry[],
   nowMs: number,
 ): { pings: ReminderPing[]; tracking: TrackingEntry[] } {
@@ -109,12 +110,13 @@ export function computeReminders(
   return { pings, tracking };
 }
 
-function makePing(ex: VancouverExam, kind: ReminderPing["kind"]): ReminderPing {
+function makePing(ex: RegistrationExam, kind: ReminderPing["kind"]): ReminderPing {
   return {
     examKey: ex.examKey,
     label: ex.label,
     kind,
     registrationOpensAt: ex.registrationOpensAt,
+    registrationWindow: ex.registrationWindow,
     spotsLeft: ex.spotsLeft,
     bookingUrl: ex.bookingUrl,
   };
@@ -151,19 +153,27 @@ function formatCountdown(epochSec: number | null, nowMs: number): string {
   return parts.join("") || "不到 1 分钟";
 }
 
-export function formatPings(pings: ReminderPing[], nowMs: number): string {
-  const lines: string[] = ["@everyone 🇫🇷 **温哥华 TCF Canada · 报名提醒**", ""];
+export function formatPings(cityZh: string, pings: ReminderPing[], nowMs: number): string {
+  const lines: string[] = [`@everyone 🇫🇷 **${cityZh} TCF Canada · 报名提醒**`, ""];
   for (const p of pings) {
-    const when = formatPacific(p.registrationOpensAt);
     const cd = formatCountdown(p.registrationOpensAt, nowMs);
     const spots = p.spotsLeft != null ? ` · 剩 ${p.spotsLeft} 个名额` : "";
     if (p.kind === "new") {
       lines.push(`🆕 **新场次上线：** ${p.label}`);
-      lines.push(`　报名将于 **${when}** 开放${cd ? `（还有 ${cd}）` : ""}${spots}。`);
+      if (p.registrationOpensAt == null) {
+        // No machine-readable open time — the row appeared with registration
+        // already open/closed/full. Show the human window instead of "时间待定".
+        const window = p.registrationWindow
+          ? `报名窗口：**${p.registrationWindow}**（可能已开放，请立即查看）`
+          : "报名时间未公布，请留意官网。";
+        lines.push(`　${window}${spots}`);
+      } else {
+        lines.push(`　报名将于 **${formatPacific(p.registrationOpensAt)}** 开放${cd ? `（还有 ${cd}）` : ""}${spots}。`);
+      }
     } else {
       const label = p.kind === "3d" ? "3 天" : p.kind === "2d" ? "2 天" : "1 天";
       lines.push(`⏰ **距报名开放约 ${label}：** ${p.label}`);
-      lines.push(`　报名将于 **${when}** 开放${cd ? `（还有 ${cd}）` : ""}${spots} —— 请提前准备，名额秒空。`);
+      lines.push(`　报名将于 **${formatPacific(p.registrationOpensAt)}** 开放${cd ? `（还有 ${cd}）` : ""}${spots} —— 请提前准备，名额秒空。`);
     }
     lines.push(`　👉 ${p.bookingUrl}`);
     lines.push("");
@@ -171,28 +181,29 @@ export function formatPings(pings: ReminderPing[], nowMs: number): string {
   return lines.join("\n").trim();
 }
 
-const CITY = "vancouver";
 const EXAM_TYPE = "TCF Canada";
 
 /**
  * Orchestrator entry point: load prev tracking, compute pings, notify, persist.
  * In dry-run, prev state is treated as empty and pings are printed, not sent.
  */
-export async function runVancouverReminders(
-  exams: VancouverExam[],
+export async function runRegistrationReminders(
+  cityKey: string,
+  cityZh: string,
+  exams: RegistrationExam[],
   webhookUrl: string | undefined,
   dryRun: boolean,
   nowMs: number = Date.now(),
 ): Promise<void> {
   const prevTracking = dryRun
     ? []
-    : (((await getPrevState(CITY)).find((r) => r.exam_type === EXAM_TYPE)?.slots as
+    : (((await getPrevState(cityKey)).find((r) => r.exam_type === EXAM_TYPE)?.slots as
         | TrackingEntry[]
         | undefined) ?? []);
 
   const { pings, tracking } = computeReminders(exams, prevTracking, nowMs);
 
-  console.log(`[vancouver] ${exams.length} exam(s) tracked, ${pings.length} reminder ping(s)`);
+  console.log(`[${cityKey}] ${exams.length} exam(s) tracked, ${pings.length} reminder ping(s)`);
   for (const ex of exams) {
     console.log(
       `  - ${ex.label} | opens ${formatPacific(ex.registrationOpensAt)} | status=${ex.statusClass} | spots=${ex.spotsLeft}`,
@@ -200,17 +211,17 @@ export async function runVancouverReminders(
   }
 
   if (pings.length > 0) {
-    const content = formatPings(pings, nowMs);
+    const content = formatPings(cityZh, pings, nowMs);
     if (dryRun) {
-      console.log(`\n[vancouver] WOULD notify:\n${content}\n`);
+      console.log(`\n[${cityKey}] WOULD notify:\n${content}\n`);
     } else if (webhookUrl) {
       await postDiscord(webhookUrl, content);
     } else {
-      console.warn("[vancouver] no webhook URL set — skipping notify");
+      console.warn(`[${cityKey}] no webhook URL set — skipping notify`);
     }
   }
 
   if (!dryRun) {
-    await upsertState(CITY, EXAM_TYPE, tracking as unknown as any[], pings.length > 0);
+    await upsertState(cityKey, EXAM_TYPE, tracking as unknown as any[], pings.length > 0);
   }
 }

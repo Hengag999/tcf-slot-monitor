@@ -52,8 +52,8 @@ Diff strategies, selected per city by a flag in the `cities` config:
 | Strategy | Cities | Behaviour |
 |----------|--------|-----------|
 | **0 → N transition** (default) | Toronto, Calgary, Halifax, Ottawa, Ashton | Notify only when an exam type went from **0** known slots to **>0**. Avoids re-pinging while slots stay open. |
-| **Per-date diff** (`diffByDate: true`) | North York, Victoria, Edmonton | Notify about any **date not present in the previous set** (set difference on `slot.date`). Catches new dates appearing while others are already open. |
-| **Registration reminders** (`reminderMode: true`) | Vancouver | Doesn't diff availability at all. AF Vancouver's platform advertises each exam's *registration-open* time ahead of time; spots vanish in seconds, so instead of catching availability the engine pings reminders **before** each exam's open time (new-session, then 3d/2d/1d). See `src/lib/vancouverReminders.ts`. The orchestrator routes `reminderMode` cities to `runVancouverReminders` and skips the diff. |
+| **Per-date diff** (`diffByDate: true`) | North York, Edmonton | Notify about any **date not present in the previous set** (set difference on `slot.date`). Catches new dates appearing while others are already open. |
+| **Registration reminders** (`reminderMode: true`) | Vancouver, Victoria | Doesn't diff availability at all. The shared AF "exam-selector" platform advertises each exam's *registration-open* time ahead of time; spots vanish in seconds, so instead of catching availability the engine pings reminders **before** each exam's open time (new-session, then 3d/2d/1d). See `src/lib/registrationReminders.ts`. The orchestrator routes `reminderMode` cities to `runRegistrationReminders` (passing the city key + Chinese label) and skips the diff. |
 
 ### File layout
 
@@ -64,7 +64,8 @@ scripts/
 src/lib/
   db.ts                  # Neon Postgres state: getPrevState / upsertState
   discord.ts             # notifyDiscord (standard) + postDiscord (raw message)
-  vancouverReminders.ts  # Vancouver's registration-reminder engine (reminderMode)
+  examSelector.ts        # shared parser for the alliancefrancaise.ca exam-selector listing (Vancouver + Victoria filter it by Location)
+  registrationReminders.ts # registration-reminder engine (reminderMode: Vancouver, Victoria)
 database/migrations/
   001_slot_monitor_state.sql
 .github/workflows/
@@ -102,19 +103,19 @@ Every file in `scripts/scrapers/` follows the same shape:
 |------|----------|-----------|
 | **Toronto** | Alliance Française CM API + Active Communities API | Fetches session list for two categories (367 = E-TCF/computer, 368 = P-TCF/paper), then confirms each session's `space_status` is not `Full`/`On Hold` via the detail API (concurrency-capped at 5). Only city that distinguishes exam types. |
 | **Calgary** | Oncord CMS (static HTML) | Parses month "session cards" in the Step 2 section, skips `SOLD OUT`, extracts the `Registrations` link, then **follows each link** and verifies the destination has ≥1 non-sold-out `<div class="exam-card">`. The month button stays visible after all dates fill, so the destination check is required to avoid false positives. |
-| **Vancouver** | AF "exam-selector" listing table (`alliancefrancaise.ca`) | **Not** an availability scraper — returns every exam *row* from the TCF-Canada listing table (`/en/language/exams/tcf-canada/`), each with its registration-open epoch from the Bookings cell's `data-opens-at`. Feeds the reminder engine (`reminderMode`), not the diff. Migrated off the old Oncord product combobox (which 301s to a dead slug). |
+| **Vancouver** | AF "exam-selector" listing table (`alliancefrancaise.ca`) | **Not** an availability scraper — returns every exam *row* from the shared TCF-Canada listing table (`/en/language/exams/tcf-canada/`, parsed in `src/lib/examSelector.ts`) whose Location column is **not** Victoria's, each with its registration-open epoch from the Bookings cell's `data-opens-at`. Feeds the reminder engine (`reminderMode`), not the diff. Migrated off the old Oncord product combobox (which 301s to a dead slug). |
 | **Halifax** | AEC platform (`afhalifax.aec.app`) | Scrapes the public `APIKEY` from page HTML, then calls the examinations API (type 16). Bookable = `isFull === false` AND a non-empty `mainRegisterLink.link`. |
 | **Ottawa** | AEC platform (`afottawa.aec.app`) | Same as Halifax; queries two exam-type endpoints (IDs 5 and 79) and labels each slot by its `product_name`. |
 | **Ashton** | WordPress/Elementor form (`ashtontesting.ca`) | Parses `<label>` radio entries inside `tcf-radio-picker`; skips `disabled` inputs and `(FULL)` labels. |
 | **North York** | GBLC API (`api.gblc.ca`) | Calls the test-schedules endpoint with `has_available_seats=true` (test 6 / format 5); returns sessions with open seats, reporting `availableSeats`. Per-date diff. |
-| **Victoria** | Oncord CMS (embedded JSON) | If page shows "isn't available at the moment" → return `[]`. Otherwise same parse as Vancouver, anchored on `Date (Please choose)`. Per-date diff. |
+| **Victoria** | AF "exam-selector" listing table (`alliancefrancaise.ca`) | Same shared listing as Vancouver, filtered to rows whose Location column mentions Victoria. AF Victoria merged into AF-CAPA (2026-06/07): its old Oncord product page 404s and afvictoria.ca defers exams to the shared platform, which currently carries **zero** Victoria rows — steady state is `[]`, not an error. Feeds the reminder engine (`reminderMode`). |
 | **Edmonton** | Oncord CMS (embedded JSON) | Anchors on the `choose your session` label. Sold-out sessions stay listed with a `(Sold out)` suffix, so the same `sold out/complet/full` negative-match filter drops them. Per-date diff. |
 
 ### Key patterns & gotchas
 
 - **AEC empty state** (Halifax/Ottawa): when there are no examinations, the API returns **HTTP 204 with an empty body** (not `[]`). `res.ok` is true, so `res.json()` would throw "Unexpected end of JSON input" — read the body as text and short-circuit on empty.
-- **Oncord sold-out** (Victoria/Edmonton): when sold out, Oncord **removes the combobox entirely** and renders a marker — "isn't available at the moment" (Victoria) or a `<strong>SOLD OUT!</strong>` badge (Edmonton). Detect the marker and return `[]` — don't throw, or stale slots get frozen in the DB. Only throw when *neither* the marker *nor* the expected label is found (genuinely unrecognised structure). (Vancouver used to share this pattern but has since migrated off Oncord — see its row above.)
-- **Vancouver registration-open epoch**: the listing table's Bookings cell embeds the registration-open time as a unix epoch (`data-opens-at="…"`) plus an `es-status-*` state class — parse the epoch directly, no Pacific-timezone math. Reminders count down to it.
+- **Oncord sold-out** (Edmonton): when sold out, Oncord **removes the combobox entirely** and renders a `<strong>SOLD OUT!</strong>` badge. Detect the marker and return `[]` — don't throw, or stale slots get frozen in the DB. Only throw when *neither* the marker *nor* the expected label is found (genuinely unrecognised structure). (Vancouver and Victoria used to share this pattern but have since migrated off Oncord — see their rows above.)
+- **Exam-selector registration-open epoch** (Vancouver/Victoria): the listing table's Bookings cell embeds the registration-open time as a unix epoch (`data-opens-at="…"`) plus an `es-status-*` state class — parse the epoch directly, no Pacific-timezone math. Reminders count down to it. Rows that first appear **after** their registration already opened carry **no `data-opens-at`** (`registrationOpensAt: null`) — the new-session ping then shows the human-text registration window instead of a countdown.
 - **AEC API key is public but may rotate** with platform updates; if requests start 401-ing, re-scrape the page for a fresh `APIKEY`.
 - **Anchor on labels, not IDs**: Oncord derives combobox IDs from the field label and they can rotate. The durable approach is to find the label substring, then parse the following `<script type="application/json">` block.
 - **Calgary prefers false negatives**: the destination-page per-date check accepts occasionally missing a real opening over emitting weeks of false positives from a stuck month button.

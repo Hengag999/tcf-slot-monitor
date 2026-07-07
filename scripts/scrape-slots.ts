@@ -10,7 +10,7 @@ import { scrapeVictoria } from "./scrapers/victoria";
 import { scrapeEdmonton } from "./scrapers/edmonton";
 import { getPrevState, upsertState } from "../src/lib/db";
 import { notifyDiscord } from "../src/lib/discord";
-import { runVancouverReminders, type VancouverExam } from "../src/lib/vancouverReminders";
+import { runRegistrationReminders, type RegistrationExam } from "../src/lib/registrationReminders";
 
 // Common shape that all scrapers satisfy
 interface MonitorSlot {
@@ -31,8 +31,10 @@ interface CityConfig {
   // When true, notify per newly-appeared date instead of only on 0→N
   diffByDate?: boolean;
   // When true, the city runs the registration-reminder engine instead of the
-  // availability diff (Vancouver — see src/lib/vancouverReminders.ts).
+  // availability diff (Vancouver, Victoria — see src/lib/registrationReminders.ts).
   reminderMode?: boolean;
+  // Chinese city name used in the reminder message header (reminderMode only).
+  zhLabel?: string;
 }
 
 const DRY_RUN = process.argv.includes("--dry-run");
@@ -40,12 +42,12 @@ const DRY_RUN = process.argv.includes("--dry-run");
 const cities: CityConfig[] = [
   { key: "toronto", label: "Toronto", scrape: scrapeToronto, webhookEnv: "DISCORD_WEBHOOK_TORONTO" },
   { key: "calgary", label: "Calgary", scrape: scrapeCalgary, webhookEnv: "DISCORD_WEBHOOK_CALGARY" },
-  { key: "vancouver", label: "Vancouver", scrape: scrapeVancouver, webhookEnv: "DISCORD_WEBHOOK_VANCOUVER", reminderMode: true },
+  { key: "vancouver", label: "Vancouver", scrape: scrapeVancouver, webhookEnv: "DISCORD_WEBHOOK_VANCOUVER", reminderMode: true, zhLabel: "温哥华" },
   { key: "halifax", label: "Halifax", scrape: scrapeHalifax, webhookEnv: "DISCORD_WEBHOOK_HALIFAX" },
   { key: "ottawa", label: "Ottawa", scrape: scrapeOttawa, webhookEnv: "DISCORD_WEBHOOK_OTTAWA" },
   { key: "ashton", label: "Ashton", scrape: scrapeAshton, webhookEnv: "DISCORD_WEBHOOK_ASHTON" },
   { key: "northyork", label: "North York", scrape: scrapeNorthYork, webhookEnv: "DISCORD_WEBHOOK_NORTHYORK", diffByDate: true },
-  { key: "victoria", label: "Victoria", scrape: scrapeVictoria, webhookEnv: "DISCORD_WEBHOOK_VICTORIA", diffByDate: true },
+  { key: "victoria", label: "Victoria", scrape: scrapeVictoria, webhookEnv: "DISCORD_WEBHOOK_VICTORIA", reminderMode: true, zhLabel: "维多利亚" },
   { key: "edmonton", label: "Edmonton", scrape: scrapeEdmonton, webhookEnv: "DISCORD_WEBHOOK_EDMONTON", diffByDate: true },
 ];
 
@@ -58,10 +60,12 @@ function groupByExamType(slots: MonitorSlot[]): Record<string, MonitorSlot[]> {
 }
 
 async function processCity(city: CityConfig, allSlots: MonitorSlot[]): Promise<void> {
-  // Vancouver runs the registration-reminder engine, not the availability diff.
+  // Exam-selector cities run the registration-reminder engine, not the availability diff.
   if (city.reminderMode) {
-    await runVancouverReminders(
-      allSlots as unknown as VancouverExam[],
+    await runRegistrationReminders(
+      city.key,
+      city.zhLabel ?? city.label,
+      allSlots as unknown as RegistrationExam[],
       process.env[city.webhookEnv],
       DRY_RUN,
     );
