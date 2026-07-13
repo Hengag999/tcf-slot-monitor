@@ -1,8 +1,11 @@
 // Ashton scraper
 // Ashton Testing Services (ashtontesting.ca) uses a WordPress/Elementor form.
-// Session dates are rendered as radio buttons inside a <div class="tcf-radio-picker">.
-// Full sessions have a disabled <input type="radio"> and "(FULL)" in the label text.
-// Available sessions have name="tcf_radio_date", a value attribute, and are not disabled.
+// Two structures have been observed for the exam-date field:
+//  1. Custom radio picker: a <div class="tcf-radio-picker"> of <label> radio
+//     entries (name="tcf_radio_date"); full sessions are disabled / "(FULL)".
+//  2. Plain Elementor select (since ~2026-07): <select name="form_fields[exma_date]">
+//     whose <option>s are the sessions. When no sessions are offered the select
+//     holds a single empty option — that's the sold-out steady state, not an error.
 
 export interface Slot {
   id: string;
@@ -21,14 +24,36 @@ export async function scrapeAshton(): Promise<Slot[]> {
 
   const html = await res.text();
 
-  // Extract the tcf-radio-picker block
+  // Structure 1: custom tcf-radio-picker block
   const pickerStart = html.indexOf('class="tcf-radio-picker"');
-  if (pickerStart === -1) {
-    throw new Error("Ashton: tcf-radio-picker not found — structure may have changed");
+  if (pickerStart !== -1) {
+    const pickerEnd = html.indexOf("</div>", pickerStart);
+    return parseRadioPicker(html.slice(pickerStart, pickerEnd));
   }
-  const pickerEnd = html.indexOf("</div>", pickerStart);
-  const pickerHtml = html.slice(pickerStart, pickerEnd);
 
+  // Structure 2: plain Elementor select for the exam date
+  const selectMatch = html.match(
+    /<select[^>]+name="form_fields\[exma_date\]"[^>]*>([\s\S]*?)<\/select>/i
+  );
+  if (selectMatch) {
+    return parseDateSelect(selectMatch[1]);
+  }
+
+  throw new Error(
+    "Ashton: neither tcf-radio-picker nor exma_date select found — structure may have changed"
+  );
+}
+
+function makeSlot(value: string, text: string): Slot {
+  return {
+    id: `ashton-${Buffer.from(value).toString("base64").slice(0, 12)}`,
+    examType: "TCF Canada",
+    date: text,
+    bookingUrl: TCF_PAGE,
+  };
+}
+
+function parseRadioPicker(pickerHtml: string): Slot[] {
   // Match each <label>…</label> block
   const labelPattern = /<label[^>]*>([\s\S]*?)<\/label>/gi;
   const slots: Slot[] = [];
@@ -50,12 +75,31 @@ export async function scrapeAshton(): Promise<Slot[]> {
     const valueMatch = inner.match(/value="([^"]+)"/);
     const value = valueMatch ? valueMatch[1] : text;
 
-    slots.push({
-      id: `ashton-${Buffer.from(value).toString("base64").slice(0, 12)}`,
-      examType: "TCF Canada",
-      date: text,
-      bookingUrl: TCF_PAGE,
-    });
+    slots.push(makeSlot(value, text));
+  }
+
+  return slots;
+}
+
+function parseDateSelect(optionsHtml: string): Slot[] {
+  const optionPattern = /<option([^>]*)>([\s\S]*?)<\/option>/gi;
+  const slots: Slot[] = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = optionPattern.exec(optionsHtml)) !== null) {
+    const attrs = match[1];
+    const text = match[2].replace(/<[^>]+>/g, "").trim();
+
+    // The empty placeholder option is the no-sessions steady state
+    if (!text) continue;
+    if (/disabled/i.test(attrs)) continue;
+    if (/\(FULL\)|sold\s*out|complet/i.test(text)) continue;
+
+    const valueMatch = attrs.match(/value="([^"]*)"/);
+    const value = valueMatch?.[1] || text;
+    if (!value) continue;
+
+    slots.push(makeSlot(value, text));
   }
 
   return slots;

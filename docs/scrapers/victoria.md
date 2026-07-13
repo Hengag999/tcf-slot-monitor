@@ -7,7 +7,7 @@
 | **Page(s)** | `https://www.alliancefrancaise.ca/en/language/exams/tcf-canada/` (rows with a Victoria Location) |
 | **Discord** | #victoria (bot "BonTCF Victoria Bot") |
 | **DB key** | city=`victoria`, exam_type=`TCF Canada` (the `slots` JSONB holds reminder tracking, not slots) |
-| **Status** | ✅ rebuilt onto the shared exam-selector platform — last assessed 2026-07-07 |
+| **Status** | ✅ healthy (no Victoria sittings exist anywhere) — last assessed 2026-07-13 |
 
 ## How it works
 - `scrapeVictoria()` fetches the **same shared TCF-Canada listing** as Vancouver
@@ -49,6 +49,15 @@
   instead of "时间待定". Verified: standalone dry-runs (victoria → 0 rows no-throw,
   vancouver → 15 rows) and full `--dry-run` across all 9 cities clean. First real
   run overwrites the stale slot-array state with an empty tracking array.
+- **2026-07-13** — Re-assessed (user suspected breakage; silent since 2026-05-25,
+  the last ping of the old Oncord scraper). **Verdict: benign, no action.**
+  `checked_at` fresh; the shared exam-selector listing has **0** Victoria mentions
+  (all 15 rows are Vancouver). Cross-checked afvictoria.ca directly: the
+  `/products/categories/exams/tcf-canada/` category now contains only
+  workshop/re-evaluation/prep products — no exam sittings — and the old full-exam
+  slug redirects to a `…-victoria-classic` URL that 404s. There is currently no
+  bookable Victoria TCF anywhere; the scraper is watching the right place and will
+  pick rows up if AF-CAPA re-lists them.
 
 ## Debug recipe
 ```bash

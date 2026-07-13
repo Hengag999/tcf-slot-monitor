@@ -7,7 +7,7 @@
 | **Page(s)** | `https://www.afedmonton.com/products/af-tcf-canada/` |
 | **Discord** | #edmonton (bot "BonTCF Edmonton Bot") |
 | **DB key** | city=`edmonton`, exam_type=`TCF Canada` |
-| **Status** | ✅ healthy (fixed) — last assessed 2026-06-13 |
+| **Status** | ✅ healthy (product genuinely sold out) — last assessed 2026-07-13 |
 
 ## How it works
 - Anchor on the **"choose your session"** label, then parse the next
@@ -39,6 +39,13 @@
   and showed the `SOLD OUT!` badge. Fix: detect the badge → return `[]`; throw
   only when neither label nor badge present. Verified end-to-end with a mocked
   fetch: available → parses open dates, fully sold-out → `[]`, unknown → throws.
+- **2026-07-13** — Re-assessed after 6.5-week Discord silence (last ping
+  2026-05-28, "24 juin"). **Verdict: benign, no action.** `checked_at` fresh;
+  dry-run takes the sold-out branch; independent fetch confirms the product page
+  is live and shows the `SOLD OUT!` badge with no session dates in the body. The
+  channel history shows Edmonton drips small batches (Apr–May pings), so a long
+  fully-sold-out stretch is consistent. Watch for the next batch to confirm the
+  available-parse path still works after the site's badge/combobox flip-flop.
 
 ## Debug recipe
 ```bash

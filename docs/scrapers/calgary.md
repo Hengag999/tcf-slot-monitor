@@ -7,7 +7,7 @@
 | **Page(s)** | parent `https://www.afcalgary.ca/exams/tcf/registration-process/` → destination e.g. `https://www.afcalgary.ca/exams/tcf/tcf-registrations-open/` |
 | **Discord** | #calgary (bot "Calgary Bot") |
 | **DB key** | city=`calgary`, exam_type=`TCF Canada` |
-| **Status** | ✅ healthy (hardened + instrumented) — last assessed 2026-06-13 |
+| **Status** | ✅ healthy (silence is genuine sold-out) — last assessed 2026-07-13 |
 
 ## How it works
 - Narrow to the **"Step 2"** section; parse month "session cards"
@@ -55,6 +55,14 @@
   against the modifier-class false negative and added open-state logging.
   Verified live (8 cards, 0 open → `[]`) + synthetic (bare-open ✓, modifier-open ✓,
   plural-wrapper → no false positive ✓).
+- **2026-07-13** — Re-assessed after 105-day Discord silence (user suspected
+  breakage). **Verdict: benign, no action.** `checked_at` fresh (same cohort as
+  healthy cities); dry-run finds one candidate month ("September 2026 sessions"),
+  destination has 5 exam-cards and independent fetch confirms every card's visible
+  text reads **SOLD OUT** (`open=0` is correct). The main page advertises no other
+  month. Open-detection still unproven by a real opening — keep watching for
+  `[calgary:OPEN-MARKUP]` in CI logs. The sampling-gap caveat stands: GitHub
+  throttles the */5 cron to ~1.5–4h, so fast sell-outs can be missed entirely.
 
 ## Debug recipe
 ```bash
