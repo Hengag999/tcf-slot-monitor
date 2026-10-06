@@ -105,3 +105,8 @@ A healthy dry-run reports the total listed rows and currently bookable count.
 Investigate fetch/pagination/parser errors rather than interpreting them as zero
 availability. When diagnosing a future regression, inspect the official TCF
 entry point, every Show More page, the Bookings cell, and its destination URL.
+
+
+## Shipment verification — 2026-10-06 21:18 China time
+
+The repairs are deployed on `master`. [GitHub run 37469738669](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37469738669) passed all source checks and refreshed stored state. See `docs/health-assessment-2026-10-06.md` for the first-run Discord timeout, verified message reconciliation, and final production evidence. Earlier local-only/pending-deployment statements above describe the pre-shipment assessment.

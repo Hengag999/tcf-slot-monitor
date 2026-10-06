@@ -89,3 +89,8 @@ gh run view <run-id> --log | rg -i toronto
 ```
 
 Read DB freshness per exam type, not only per city. A fresh E-TCF row does not establish P-TCF health. Recheck the live source counts and current workflow logs; neither Discord silence nor a previously green CI run independently proves complete coverage.
+
+
+## Shipment verification — 2026-10-06 21:18 China time
+
+The repairs are deployed on `master`. [GitHub run 37469738669](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37469738669) passed all source checks and refreshed stored state. See `docs/health-assessment-2026-10-06.md` for the first-run Discord timeout, verified message reconciliation, and final production evidence. Earlier local-only/pending-deployment statements above describe the pre-shipment assessment.

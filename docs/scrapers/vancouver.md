@@ -103,3 +103,8 @@ The shared parser now follows the actual Show More links, rejecting an incomplet
 Two three-day batches were visible in Discord on September 12 at 06:01 and 08:07 China time. The precise historical cause was not established; stable identities and serialized workflow runs address current duplication risks but do not prove that cause.
 
 These changes are locally tested. No repaired production run or new Discord delivery has occurred in this assessment. The older sections above record historical behavior; the updated engine supersedes their allowance for announcing closed rows.
+
+
+## Shipment verification — 2026-10-06 21:18 China time
+
+The repairs are deployed on `master`. [GitHub run 37469738669](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37469738669) passed all source checks and refreshed stored state. See `docs/health-assessment-2026-10-06.md` for the first-run Discord timeout, verified message reconciliation, and final production evidence. Earlier local-only/pending-deployment statements above describe the pre-shipment assessment.

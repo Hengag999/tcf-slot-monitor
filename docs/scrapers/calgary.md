@@ -102,3 +102,8 @@ curl -s "http://web.archive.org/cdx/search/cdx?url=afcalgary.ca/exams/tcf/tcf-re
 ```bash
 node --import tsx --test tests/calgary.test.ts
 ```
+
+
+## Shipment verification — 2026-10-06 21:18 China time
+
+The repairs are deployed on `master`. [GitHub run 37469738669](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37469738669) passed all source checks and refreshed stored state. See `docs/health-assessment-2026-10-06.md` for the first-run Discord timeout, verified message reconciliation, and final production evidence. Earlier local-only/pending-deployment statements above describe the pre-shipment assessment.

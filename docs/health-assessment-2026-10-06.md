@@ -1,6 +1,6 @@
 # TCF monitor assessment and local repairs — 2026-10-06
 
-The monitor was running, but had two failed cities and one incomplete listing. Discord silence was therefore a mixture of expected notification policy, broken discovery, and missing pagination. The changes below are implemented and verified **locally**, not yet committed/pushed or exercised by GitHub. No production state was written and no Discord messages or registrations were submitted during this investigation.
+The monitor was running, but had two failed cities and one incomplete listing. Discord silence was therefore a mixture of expected notification policy, broken discovery, and missing pagination. The investigation first used read-only production checks and local dry-runs. The user then authorized shipment. The repairs are now pushed to `master`, and the production recovery/verification run passed; see the shipment record below. No exam registrations were submitted.
 
 ## Evidence and scope
 
@@ -70,12 +70,23 @@ Unknown markup and request failures now throw, preserving prior state. A bookabl
 - Offline regression tests and TypeScript checks run before the monitor in CI.
 - Cron is offset from minute zero (`2-57/5`), but remains best-effort. This is not a cure for the observed multi-hour cadence. If reliable five-minute checks are required, use a scheduler/worker with an explicit cadence guarantee or an independently monitored scheduler that dispatches the existing job; no new infrastructure was provisioned here. Advance registration reminders are the useful complement when openings are brief.
 
-## Validation and next production check
+## Validation and production verification
 
-- `npm test`: 60 offline tests pass; mocked I/O verifies source isolation, state preservation, missing-webhook behavior, pagination, identities, legacy reminder migration, cutoff/reschedule behavior, city timezone, and positive booking requirements.
+- `npm test`: 68 offline tests pass; mocked I/O verifies source isolation, state preservation, missing-webhook behavior, pagination, identities, legacy reminder migration, cutoff/reschedule behavior, city timezone, and positive booking requirements.
 - `npm run typecheck`: passes.
 - Full public-source dry-run: all nine cities / eleven sources pass after repairs. No database reads or writes and no Discord sends in that dry-run.
 - Separate authorized read-only state preview: 37 new BC reminder candidates, zero newly appearing North York dates. It did not consume those events.
 - Independent code review found no integration blocker.
 
-After approval to publish, the first repaired GitHub run must show both Toronto sources and both Edmonton sources succeeding, all three BC listing pages covered, and Toronto/Edmonton `checked_at` advancing. The BC recovery should produce the 37 upcoming-session entries (chunked with only one `@everyone` in the batch) and then persist their reminder tracking. Confirm those actual Discord messages before calling production delivery verified. Existing policies for Halifax/Ottawa/Ashton/Calgary remain 0→N; changing them to per-date would be a separate service-policy decision.
+The initial local validation above preceded shipment. Existing policies for Halifax/Ottawa/Ashton/Calgary remain 0→N; changing them to per-date would be a separate service-policy decision.
+
+## Shipment record — October 6, 21:18 China time
+
+- Repairs were pushed to `master` in `d20e72b`, with delivery safeguards in `85373e5` and `5e97d82`.
+- [First production run](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37468533577) successfully scraped all sources and refreshed Toronto/Edmonton, but its Vancouver POST timed out after Discord accepted the first chunk. The new failure reporting correctly made the run red, producing the GitHub email. Vancouver reminder state was not advanced.
+- Browser inspection confirmed exactly one accepted partial message, ID `1557016902994501632`. Automatic retries were briefly paused while it was reconciled; the workflow was re-enabled afterward.
+- Reminder formatting now groups common opening information, locations and the booking link, retaining every sitting and seat count. All 37 entries fit in one 1,417-character message. Normal webhook requests use `wait=true` and require a message receipt; ambiguous transport errors remain failures rather than being blindly retried.
+- A narrowly scoped manual recovery edited that exact existing bot message with mentions disabled, read back and compared its full contents, then updated tracking with a compare-and-set guard against concurrent changes. It created no second notification and issued no additional `@everyone` ping. The recovery input is restricted to this known incident's message ID and 37-entry batch.
+- [Recovery and verification run](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37469738669) on `5e97d82` succeeded in 30 seconds: 68 tests passed, TypeScript passed, recovery passed, and all nine cities / eleven source checks passed. Vancouver then reported zero pending reminder pings on its normal monitor pass.
+- Read-only database verification after that run showed every source refreshed at 21:18 China time: Toronto computer/paper both current, Edmonton zero available plus 28 tracked reminder rows, Vancouver 95 tracked rows with `notified_at` advanced, and Victoria zero matching rows.
+- The [existing Discord message](https://discord.com/channels/1484038585907810535/1484040131932455003/1557016902994501632) was read back through ego-browser: all 37 entries, 25 New Westminster and 12 Vancouver, one edited message. Future scheduled cadence remains best-effort; this successful manual verification does not prove a five-minute execution interval.

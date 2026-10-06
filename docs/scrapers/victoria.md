@@ -78,3 +78,8 @@ FROM slot_monitor_state WHERE city='victoria';
 ## 2026-10-06 verification
 
 Latest observed Discord message: May 26 06:04 China time. Stored state was refreshed by the latest October 6 run with zero rows. The repaired shared parser follows all three public pages and finds 95 AF-CAPA sittings, **zero with a Victoria location**. This verifies the monitored source's current empty state, not the absence of exams at every possible provider. Shared pagination, stable identities, historical-row baselining, and pre-opening-only countdowns are implemented locally; production adoption remains pending.
+
+
+## Shipment verification — 2026-10-06 21:18 China time
+
+The repairs are deployed on `master`. [GitHub run 37469738669](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37469738669) passed all source checks and refreshed stored state. See `docs/health-assessment-2026-10-06.md` for the first-run Discord timeout, verified message reconciliation, and final production evidence. Earlier local-only/pending-deployment statements above describe the pre-shipment assessment.
