@@ -84,6 +84,8 @@ export async function postDiscord(
   const fetchImpl = options.fetchImpl ?? fetch;
   const sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   const chunks = chunkForDiscord(content);
+  const executeUrl = new URL(webhookUrl);
+  executeUrl.searchParams.set("wait", "true");
   let waitedMs = 0;
   const pause = async (seconds: number | null) => {
     if (seconds == null || seconds < 0 || !Number.isFinite(seconds)) {
@@ -99,13 +101,18 @@ export async function postDiscord(
 
   for (const [index, chunk] of chunks.entries()) {
     for (let attempt = 0; ; attempt++) {
-      const res = await fetchImpl(webhookUrl, {
+      const res = await fetchImpl(executeUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: chunk }),
         signal: AbortSignal.timeout(20_000),
       });
       if (res.ok) {
+        const receipt = await res.json() as { id?: unknown };
+        if (typeof receipt.id !== "string" || !/^\d+$/.test(receipt.id)) {
+          throw new Error("Discord returned no message receipt; delivery requires reconciliation");
+        }
+        console.log(`[discord] Confirmed message ${receipt.id} (${index + 1}/${chunks.length})`);
         if (index < chunks.length - 1 && res.headers.get("X-RateLimit-Remaining") === "0") {
           await pause(secondsValue(res.headers.get("X-RateLimit-Reset-After")));
         }

@@ -4,6 +4,11 @@ on:
     # Offset from the top of the hour; scheduled Actions remain best-effort.
     - cron: '2-57/5 * * * *'
   workflow_dispatch:
+    inputs:
+      recover_vancouver_message_id:
+        description: 'Known partial Vancouver bot message to edit and reconcile without a new ping'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -24,6 +29,13 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run typecheck
+      - name: Reconcile a verified partial Vancouver notification
+        if: ${{ inputs.recover_vancouver_message_id != '' }}
+        run: npx tsx scripts/recover-vancouver-notification.ts
+        env:
+          RECOVER_VANCOUVER_MESSAGE_ID: ${{ inputs.recover_vancouver_message_id }}
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+          DISCORD_WEBHOOK_VANCOUVER: ${{ secrets.DISCORD_WEBHOOK_VANCOUVER }}
       - run: npx tsx scripts/scrape-slots.ts
         env:
           POSTGRES_URL: ${{ secrets.POSTGRES_URL }}

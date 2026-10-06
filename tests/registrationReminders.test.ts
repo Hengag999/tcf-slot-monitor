@@ -86,3 +86,64 @@ test("same-date different locations remain distinguishable in notification copy"
   assert.match(message, /📍 Vancouver/);
   assert.match(message, /📍 New Westminster/);
 });
+
+test("37 BC recovery sittings retain every date and seat count in one Discord message", () => {
+  // Public snapshot observed 2026-10-06: one opening, one URL, two locations.
+  const opening = Date.parse("2026-11-02T23:00:00Z") / 1000;
+  const bookingUrl = "https://www.alliancefrancaise.ca/en/language/exams/tcf-canada/";
+  const northwest = "Alliance Francaise - 320 Columbia St., New Westminster";
+  const vancouver = "Alliance Francaise - 6161 Cambie St., Vancouver";
+  const rows: [string, string, number][] = [
+    ...[["01", 16], ["03", 16], ["05", 14], ["08", 16], ["10", 16], ["12", 14],
+      ["17", 16], ["19", 14], ["22", 16], ["23", 16], ["24", 16], ["25", 16], ["26", 14]]
+      .map(([date, seats]): [string, string, number] => [northwest, `February ${date}, 2027`, Number(seats)]),
+    ...[["06", 16], ["08", 14], ["09", 16], ["11", 16], ["13", 16], ["15", 14],
+      ["18", 16], ["20", 16], ["22", 14], ["25", 16], ["27", 8], ["29", 14]]
+      .map(([date, seats]): [string, string, number] => [northwest, `January ${date}, 2027`, Number(seats)]),
+    ...[["11", 40], ["13", 40], ["15", 28], ["18", 40], ["20", 40], ["22", 40],
+      ["25", 40], ["27", 28], ["29", 40], ["4", 40], ["6", 40], ["8", 40]]
+      .map(([date, seats]): [string, string, number] => [vancouver, `January ${date}, 2027`, Number(seats)]),
+  ];
+  const exams = rows.map(([location, label, spotsLeft], index) => exam({
+    examKey: `sitting-${index}`, location, label: `TCF-Canada ${label}`,
+    spotsLeft, registrationOpensAt: opening, bookingUrl,
+  }));
+  const message = formatPings("温哥华", computeReminders(exams, [], now).pings, now);
+  assert.equal(rows.length, 37);
+  assert.ok(message.length <= 2000, `Discord content is ${message.length} characters`);
+  assert.equal(message.match(/@everyone/g)?.length, 1);
+  assert.equal(message.match(/报名将于/g)?.length, 1);
+  assert.equal(message.split(bookingUrl).length - 1, 1);
+  assert.equal(message.match(/^• /gm)?.length, 37);
+  assert.ok(message.includes(`${northwest}（25 场）`));
+  assert.ok(message.includes(`${vancouver}（12 场）`));
+  for (const [location, label, seats] of rows) {
+    const block = message.split(`📍 ${location}`)[1].split(/📍 |👉 /)[0];
+    assert.ok(block.includes(`• ${label} · 剩 ${seats} 个名额`));
+  }
+});
+
+test("compact copy keeps reminder kinds, openings, destinations and unknown-time windows separate", () => {
+  const base = computeReminders([exam()], [], now).pings[0];
+  const pings = [
+    { ...base, examKey: "a", label: "TCF-Canada November 2 morning", location: "Vancouver" },
+    { ...base, examKey: "b", label: "TCF Canada November 2 morning*", location: "New Westminster", spotsLeft: null },
+    { ...base, examKey: "c", label: "November 2 afternoon", kind: "1d" as const },
+    { ...base, examKey: "d", label: "November 3", registrationOpensAt: base.registrationOpensAt! + day / 1000 },
+    { ...base, examKey: "e", label: "November 4", bookingUrl: "https://example.com/other" },
+    { ...base, examKey: "f", label: "November 5", registrationOpensAt: null, registrationWindow: "Window A", spotsLeft: 0 },
+    { ...base, examKey: "g", label: "November 6", registrationOpensAt: null, registrationWindow: "Window B" },
+  ];
+  const message = formatPings("测试", pings, now);
+  assert.equal(message.match(/👉 /g)?.length, 6);
+  assert.equal(message.match(/^• /gm)?.length, 7);
+  assert.equal(message.match(/🆕 /g)?.length, 5);
+  assert.match(message, /新场次上线：2 场/);
+  assert.match(message, /距报名开放约 1 天：1 场/);
+  assert.ok(message.includes("• November 2 morning*\n"));
+  assert.ok(message.includes("• November 5 · 剩 0 个名额"));
+  assert.match(message, /报名窗口：\*\*Window A\*\*/);
+  assert.match(message, /报名窗口：\*\*Window B\*\*/);
+  assert.doesNotMatch(message, /TCF-Canada November/);
+  assert.equal(message.match(/@everyone/g)?.length, 1);
+});

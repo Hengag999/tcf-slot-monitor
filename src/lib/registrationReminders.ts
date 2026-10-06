@@ -189,28 +189,52 @@ function formatCountdown(epochSec: number | null, nowMs: number): string {
 
 export function formatPings(cityZh: string, pings: ReminderPing[], nowMs: number, options: ReminderOptions = {}): string {
   const lines: string[] = [`@everyone 🇫🇷 **${cityZh} TCF Canada · 报名提醒**`, ""];
-  for (const p of pings) {
+  // Share opening details and links without merging distinct sittings. Large
+  // registration batches otherwise repeat the same paragraph dozens of times.
+  const groups = new Map<string, ReminderPing[]>();
+  for (const ping of pings) {
+    const key = JSON.stringify([ping.kind, ping.registrationOpensAt,
+      ping.registrationOpensAt == null ? ping.registrationWindow : null, ping.bookingUrl]);
+    const group = groups.get(key) ?? [];
+    group.push(ping);
+    groups.set(key, group);
+  }
+  for (const group of groups.values()) {
+    const p = group[0];
     const cd = formatCountdown(p.registrationOpensAt, nowMs);
-    const spots = p.spotsLeft != null ? ` · 剩 ${p.spotsLeft} 个名额` : "";
     if (p.kind === "new") {
-      lines.push(`🆕 **新场次上线：** ${p.label}`);
+      lines.push(`🆕 **新场次上线：${group.length} 场**`);
       if (p.registrationOpensAt == null) {
-        // No machine-readable open time — the row appeared with registration
-        // already open/closed/full. Show the human window instead of "时间待定".
         const window = p.registrationWindow
           ? `报名窗口：**${p.registrationWindow}**（官网当前显示可报名）`
           : "官网当前显示可报名，请查看报名页面。";
-        lines.push(`　${window}${spots}`);
+        lines.push(window);
       } else {
-        lines.push(`　${p.registrationOpensAt * 1000 > nowMs ? "报名将于" : "报名开放时间为"} **${formatOpening(p.registrationOpensAt, options)}**${cd ? `（还有 ${cd}）` : ""}${spots}。`);
+        const future = p.registrationOpensAt * 1000 > nowMs;
+        lines.push(`${future ? "报名将于" : "报名开放时间为"} **${formatOpening(p.registrationOpensAt, options)}**${future ? " 开放" : ""}${cd ? `（还有 ${cd}）` : ""}。`);
       }
     } else {
       const label = p.kind === "3d" ? "3 天" : p.kind === "2d" ? "2 天" : "1 天";
-      lines.push(`⏰ **距报名开放约 ${label}：** ${p.label}`);
-      lines.push(`　报名将于 **${formatOpening(p.registrationOpensAt, options)}** 开放${cd ? `（还有 ${cd}）` : ""}${spots} —— 请提前准备。`);
+      lines.push(`⏰ **距报名开放约 ${label}：${group.length} 场**`);
+      lines.push(`报名将于 **${formatOpening(p.registrationOpensAt, options)}** 开放${cd ? `（还有 ${cd}）` : ""} —— 请提前准备。`);
     }
-    if (p.location) lines.push(`　📍 ${p.location}`);
-    lines.push(`　👉 ${p.bookingUrl}`);
+    const locations = new Map<string, ReminderPing[]>();
+    for (const ping of group) {
+      const location = ping.location ?? "";
+      const sittings = locations.get(location) ?? [];
+      sittings.push(ping);
+      locations.set(location, sittings);
+    }
+    for (const [location, sittings] of locations) {
+      lines.push("");
+      if (location) lines.push(`📍 ${location}（${sittings.length} 场）`);
+      for (const sitting of sittings) {
+        const label = sitting.label.replace(/^TCF[-\s]+Canada\s+/i, "");
+        const spots = sitting.spotsLeft != null ? ` · 剩 ${sitting.spotsLeft} 个名额` : "";
+        lines.push(`• ${label}${spots}`);
+      }
+    }
+    lines.push(`👉 ${p.bookingUrl}`);
     lines.push("");
   }
   return lines.join("\n").trim();

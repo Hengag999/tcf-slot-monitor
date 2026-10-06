@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { postDiscord } from "../src/lib/discord";
 
 const content = "@everyone\n" + ["a", "b", "c"].map(c => c.repeat(1800)).join("\n");
-const accepted = (headers = {}) => new Response(null, { status: 204, headers });
+const accepted = (headers = {}) => new Response(JSON.stringify({ id: "1557016902994501632" }), { status: 200, headers });
 const limited = (body: string, headers = {}) => new Response(body, { status: 429, headers });
 
 test("mid-batch 429 retries only the rejected chunk and keeps one accepted mention", async () => {
@@ -12,6 +12,7 @@ test("mid-batch 429 retries only the rejected chunk and keeps one accepted menti
   const waits: number[] = [];
   await postDiscord("https://example.com/webhook", content, {
     fetchImpl: (async (_url, init) => {
+      assert.equal(new URL(String(_url)).searchParams.get("wait"), "true");
       const message = JSON.parse(String(init?.body)).content;
       sent.push(message);
       if (sent.length === 2) return limited('{"retry_after":0.5}', { "Retry-After": "1" });
@@ -71,4 +72,11 @@ test("ambiguous network failures and non-rate-limit errors are never automatical
     }));
     assert.equal(requests, 1);
   }
+});
+
+
+test("unconfirmed success cannot advance caller notification state", async () => {
+  await assert.rejects(postDiscord("https://example.com/webhook", "test", {
+    fetchImpl: (async () => new Response("{}", { status: 200 })) as typeof fetch,
+  }), /receipt/);
 });
