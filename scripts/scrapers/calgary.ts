@@ -1,16 +1,6 @@
-// Calgary scraper
-// AFC Calgary registration page (Oncord CMS) shows session cards per month.
-// Each card has a date label (e.g. "April 2026 sessions") and either
-// "SOLD OUT" text or a "Registrations" link.
-// We also follow the registration link to verify the destination has at
-// least one bookable date — AFC sometimes leaves the month-level
-// "Registrations" button visible on the parent page even after every
-// individual exam date inside has filled up. In that case the destination
-// page renders all <div class="exam-card"> blocks with "SOLD OUT" text and
-// no booking link. We treat the registration as closed when every card on
-// the destination is sold out. (We have no live "open" snapshot to confirm
-// the inverse — !SOLD_OUT == open — but accepting that risk: false negatives
-// beat 30 days of false positives.)
+// Calgary's month-level registration buttons can remain after every date sells out.
+// Follow each candidate month and require an individual registration link.
+// Unknown page shapes and failed requests throw so the orchestrator retains state.
 
 export interface Slot {
   id: string;
@@ -22,52 +12,84 @@ export interface Slot {
 const REGISTRATION_PAGE = "https://www.afcalgary.ca/exams/tcf/registration-process/";
 const HEADERS = { "User-Agent": "Mozilla/5.0 (compatible; tcf-slot-monitor/1.0)" };
 
-async function isRegistrationOpen(url: string): Promise<boolean> {
-  try {
-    const res = await fetch(url, { headers: HEADERS, redirect: "follow" });
-    // Check final URL after redirects
-    if (/closed/i.test(res.url)) return false;
-    if (!res.ok) return false;
-    const html = await res.text();
-    // Check page content for closed indicators
-    const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").toLowerCase();
-    if (text.includes("registration is closed") || text.includes("registrations are closed")) return false;
+const REQUEST_TIMEOUT_MS = 20_000;
 
-    // Per-date check: split exam-cards and require at least one without "SOLD OUT".
-    // The split discards the preamble (slice(1)); each remaining slice is one card's HTML.
-    // The class match tolerates a modifier class (e.g. class="exam-card available") so an
-    // open date that carries a state class still gets isolated into its own chunk — a bare
-    // /<div class="exam-card"/ split would fail to break it out and merge it into the
-    // neighbouring (sold-out) chunk, silently missing the opening. The quote/space token
-    // boundaries keep it from matching wrapper classes such as "exam-cards".
-    const cardChunks = html.split(/<div class="(?:[^"]*\s)?exam-card(?:\s[^"]*)?"/i).slice(1);
+function visibleText(html: string): string {
+  return html.replace(/<[^>]+>/g, " ").replace(/&nbsp;|&#160;/gi, " ").replace(/\s+/g, " ").trim();
+}
 
-    // Diagnostic logging: the open-detection path has never fired under the current code and
-    // there is no archived "open" snapshot to validate it against. Log every destination
-    // check (these only run for a candidate month) so the next genuine opening captures the
-    // real open-state markup. `classes` surfaces any modifier class the split must handle.
-    const classes = [...new Set([...html.matchAll(/class="([^"]*exam-card[^"]*)"/gi)].map((m) => m[1]))];
-    const openCards = cardChunks.filter((c) => !/sold\s*out/i.test(c));
-    console.log(
-      `[calgary:dest] ${url} cards=${cardChunks.length} open=${openCards.length} classes=${JSON.stringify(classes)}`,
-    );
-
-    if (cardChunks.length > 0) {
-      if (openCards.length === 0) return false;
-      // First time we ever see a non-sold-out card, dump its markup so the
-      // "absence of SOLD OUT == open" heuristic can be confirmed or replaced.
-      for (const c of openCards) {
-        console.log(`[calgary:OPEN-MARKUP] ${url}\n${c.slice(0, 600)}`);
-      }
+// Isolate balanced divs so a card cannot inherit links/status text from a sibling
+// or the footer. Oncord's cards contain nested divs and sometimes extra classes.
+function divsWithClass(html: string, className: string): string[] {
+  const blocks: string[] = [];
+  const tags = /<\/?div\b[^>]*>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = tags.exec(html)) !== null) {
+    const classes = match[0].match(/\bclass\s*=\s*(["'])(.*?)\1/i)?.[2].split(/\s+/) ?? [];
+    if (!classes.includes(className)) continue;
+    const start = tags.lastIndex;
+    let depth = 1;
+    while ((match = tags.exec(html)) !== null) {
+      depth += /^<\//.test(match[0]) ? -1 : 1;
+      if (depth === 0) break;
     }
-    return true;
-  } catch {
-    return false; // network error = can't confirm it's open
+    if (!match) throw new Error(`Calgary: incomplete ${className} block`);
+    blocks.push(html.slice(start, match.index));
   }
+  return blocks;
+}
+
+export function parseCalgaryRegistration(html: string, url: string): boolean {
+  // Ignore source-code examples, comments and styles when looking for card state.
+  const content = html.replace(/<!--[\s\S]*?-->|<script\b[^>]*>[\s\S]*?<\/script>|<style\b[^>]*>[\s\S]*?<\/style>/gi, "");
+  const text = visibleText(content);
+  if (/\bregistrations? (?:is|are) closed\b/i.test(text)) return false;
+
+  const cards = divsWithClass(content, "exam-card");
+  if (cards.length === 0) {
+    throw new Error(`Calgary: no exam cards or explicit closure at ${url} — structure may have changed`);
+  }
+
+  let openCount = 0;
+  for (const card of cards) {
+    if (/\bsold\s*out\b/i.test(visibleText(card))) continue;
+    const registrationBlocks = divsWithClass(card, "exam-registration");
+    const bookingLinks = registrationBlocks.flatMap((block) => [...block.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)]);
+    const hasBookingLink = bookingLinks.some((link) => {
+      const href = link[1].match(/\bhref\s*=\s*(["'])(.*?)\1/i)?.[2].trim();
+      if (!href || href.startsWith("#") || /(?:^|\s)(?:disabled(?:\s|=|$)|aria-disabled\s*=\s*["']true["'])/i.test(link[1])) return false;
+      const label = visibleText(link[2]);
+      if (!label || /\b(?:sold\s*out|closed|unavailable)\b/i.test(label)) return false;
+      try {
+        return /^(?:https?:)$/.test(new URL(href.replace(/&amp;/g, "&"), url).protocol);
+      } catch {
+        return false;
+      }
+    });
+    if (!hasBookingLink) {
+      throw new Error(`Calgary: exam card has neither SOLD OUT nor an actionable registration link at ${url}`);
+    }
+    openCount++;
+    // A live open example has not yet been observed; retain bounded diagnostics.
+    console.log(`[calgary:OPEN-MARKUP] ${url}\n${card.slice(0, 600)}`);
+  }
+  console.log(`[calgary:dest] ${url} cards=${cards.length} open=${openCount}`);
+  return openCount > 0;
+}
+
+async function isRegistrationOpen(url: string): Promise<boolean> {
+  const res = await fetch(url, {
+    headers: HEADERS,
+    redirect: "follow",
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  // A failed request is unknown availability, even if its error URL says closed.
+  if (!res.ok) throw new Error(`Calgary destination fetch failed: ${res.status} at ${url}`);
+  return parseCalgaryRegistration(await res.text(), res.url || url);
 }
 
 export async function scrapeCalgary(): Promise<Slot[]> {
-  const res = await fetch(REGISTRATION_PAGE, { headers: HEADERS });
+  const res = await fetch(REGISTRATION_PAGE, { headers: HEADERS, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
   if (!res.ok) throw new Error(`Calgary page fetch failed: ${res.status}`);
 
   const html = await res.text();
@@ -80,31 +102,30 @@ export async function scrapeCalgary(): Promise<Slot[]> {
   const step3Start = html.indexOf("Step 3", step2Start);
   const sectionHtml = html.slice(step2Start, step3Start !== -1 ? step3Start : undefined);
 
-  // Split into individual cards (each card is a s8-templates-card div)
-  const cardPattern = /class="s8-templates-card\s+s8-templates-card__cardsize-5">([\s\S]*?)(?=<\/div>\s*<div[^>]*class="s8-templates-card|<\/div>\s*<\/div>\s*<div[^>]*style="margin-top)/g;
   const candidates: { date: string; bookingUrl: string }[] = [];
-  let match: RegExpExecArray | null;
-
-  while ((match = cardPattern.exec(sectionHtml)) !== null) {
-    const cardHtml = match[1];
-
-    // Skip cards that are SOLD OUT
-    if (/SOLD\s*OUT/i.test(cardHtml)) continue;
-
+  let sessionCards = 0;
+  for (const cardHtml of divsWithClass(sectionHtml, "s8-templates-card__cardsize-5")) {
     // Extract session date label (e.g. "June 2026 sessions")
     // Strip HTML tags and normalize whitespace, then extract the date label
-    const textContent = cardHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+    const textContent = visibleText(cardHtml);
     const dateMatch = textContent.match(/(\w+ \d{4} sessions)/i);
-    const date = dateMatch ? dateMatch[1] : "unknown";
+    if (!dateMatch) continue; // Ignore non-session information cards in Step 2.
+    sessionCards++;
+    const date = dateMatch[1];
+    if (/SOLD\s*OUT/i.test(textContent)) continue;
 
     // Extract registration link if present
     const linkMatch = cardHtml.match(/<a[^>]+href="([^"]+)"[^>]*>\s*Registrations/i);
-    if (!linkMatch) continue; // no registration link = not bookable
+    if (!linkMatch) throw new Error(`Calgary: ${date} has neither SOLD OUT nor a Registrations link`);
 
     const href = linkMatch[1];
     const bookingUrl = href.startsWith("http") ? href : `https://www.afcalgary.ca${href}`;
 
     candidates.push({ date, bookingUrl });
+  }
+
+  if (sessionCards === 0) {
+    throw new Error("Calgary: no session cards found in Step 2 — structure may have changed");
   }
 
   // Verify each candidate by following the registration link
@@ -128,7 +149,7 @@ export async function scrapeCalgary(): Promise<Slot[]> {
 }
 
 // --- Local dry-run ---
-if (process.argv[1].endsWith("calgary.ts")) {
+if (process.argv[1]?.endsWith("calgary.ts")) {
   scrapeCalgary()
     .then((slots) => {
       if (slots.length === 0) {

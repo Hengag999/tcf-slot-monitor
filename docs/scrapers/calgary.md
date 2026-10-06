@@ -4,42 +4,42 @@
 |---|---|
 | **Platform** | Oncord CMS (static HTML; parent month-cards page + per-month destination page) |
 | **Diff strategy** | 0→N transition |
-| **Page(s)** | parent `https://www.afcalgary.ca/exams/tcf/registration-process/` → destination e.g. `https://www.afcalgary.ca/exams/tcf/tcf-registrations-open/` |
+| **Page(s)** | parent `https://www.afcalgary.ca/exams/tcf/registration-process/` → current destination `https://www.afcalgary.ca/exams/tcf/tcf-registrations-open-1607/` (follow the parent link; slugs change) |
 | **Discord** | #calgary (bot "Calgary Bot") |
 | **DB key** | city=`calgary`, exam_type=`TCF Canada` |
-| **Status** | ✅ healthy (silence is genuine sold-out) — last assessed 2026-07-13 |
+| **Status** | Current public TCF dates sold out; error handling hardened locally — assessed 2026-10-06; open-state markup still unverified |
 
 ## How it works
-- Narrow to the **"Step 2"** section; parse month "session cards"
-  (`class="s8-templates-card s8-templates-card__cardsize-5"`), e.g. "August 2026 sessions".
-- Skip any card with `SOLD OUT`; from the rest, extract the `Registrations` link.
-- **Follow each link** to its destination and require ≥1 `<div class="exam-card">`
-  block **without** "SOLD OUT". This per-date verification exists because the
-  month-level "Registrations" button stays visible even after every individual
-  date inside has filled (the "stuck button").
-- Returns only verified-open months; `[]` is the normal steady state.
-- **Instrumentation** (added 2026-06-13): logs `[calgary:candidate]` (a month
-  whose button is live), `[calgary:dest]` (every destination check, incl. the
-  distinct `exam-card` class attributes), and `[calgary:OPEN-MARKUP]` (dumps the
-  first non-sold-out card's HTML the moment one ever appears).
+- Narrow to **Step 2** and extract balanced month card divs with the
+  `s8-templates-card__cardsize-5` class token. Require at least one recognizable
+  `Month YYYY sessions` label. Information cards are ignored.
+- Skip months explicitly marked `SOLD OUT`; other dated month cards must have a
+  `Registrations` link, which the scraper follows. A stale month button alone
+  is not an availability signal.
+- The destination must either explicitly say registration is closed, or contain
+  individual `exam-card` divs. Each card must be sold out or have a nonempty,
+  enabled HTTP(S) anchor inside its `exam-registration` block. At least one
+  such link is required to return the candidate month.
+- HTTP/network errors, missing card shapes, incomplete markup and ambiguous
+  individual cards **throw**, preserving the previous city state. They are not
+  converted into a successful empty result. Both fetches have a 20-second timeout.
+- Logs `[calgary:candidate]`, `[calgary:dest]` (card/open counts), and bounded
+  `[calgary:OPEN-MARKUP]` for a positive card.
 
 ## Known failure modes / gotchas
-- **Stuck month button** → false positive. The month button persists after all
-  dates fill; that's why the destination per-date check is mandatory. Calgary
-  deliberately prefers false negatives over weeks of false positives.
-- **Modifier class on open cards** → false negative (FIXED). The destination
-  split was the literal `<div class="exam-card"`; an open date rendered as
-  `class="exam-card available"` would not be isolated and would be silently
-  missed. Now splits on `/<div class="(?:[^"]*\s)?exam-card(?:\s[^"]*)?"/i`
-  (tolerates modifiers, still won't match wrapper classes like `exam-cards`).
-- **Open-detection is unproven by a real opening.** Every observed state
-  (live + Wayback 2026-05-11/13/20) has been 100% sold out; no archived OPEN
-  snapshot exists. The "absence of SOLD OUT == open" heuristic rests on this
-  assumption — hence the `[calgary:OPEN-MARKUP]` logging to capture the next real
-  opening. Watch CI logs; a `classes` value other than `["exam-card"]` is the
-  modifier-class scenario appearing for real.
-- **Sampling gap.** TCF Calgary demand is extreme; sessions can sell out within
-  one 5-min cron window, so genuine openings may rarely be caught. Inherent.
+- **Stale month button.** The month link can remain while every individual date
+  is sold out. Always follow it; do not notify from the parent button alone.
+- **Unrecognized destination.** Previously, a 200 response with zero exam cards
+  returned open. It now throws. Failed requests also throw instead of returning
+  closed; neither case should clear valid persisted state.
+- **Open-state markup is still unverified.** No live open TCF example was found
+  on 2026-10-06. The positive link rule reflects the site's published guidance,
+  but its exact open markup has only synthetic coverage. If the live opening
+  uses a different control, the scraper will raise an error for review. Even a
+  visible registration button can temporarily lag a sellout, according to the
+  site; this is not a seat reservation or checkout guarantee.
+- **Sampling gap.** Assess actual GitHub run timestamps. The five-minute cron is
+  not a five-minute execution guarantee, and short openings can be missed.
 
 ## Incident log
 - **2026-04-30** (`6bc6c61`) — Calgary emitted a ~30-day false positive on "June
@@ -64,12 +64,28 @@
   `[calgary:OPEN-MARKUP]` in CI logs. The sampling-gap caveat stands: GitHub
   throttles the */5 cron to ~1.5–4h, so fast sell-outs can be missed entirely.
 
+- **2026-10-06** — Public source reconnaissance found September and October
+  sold out on the [parent page](https://www.afcalgary.ca/exams/tcf/registration-process/).
+  November's link was still visible, but its
+  [destination](https://www.afcalgary.ca/exams/tcf/tcf-registrations-open-1607/)
+  contained 11 individual TCF dates, all explicitly sold out. The page explains
+  that a missing booking button also means no seat and warns about brief button
+  lag after sellout. The related
+  [TEF destination](https://www.afcalgary.ca/exams/tef/tef-registrations-open-1607/)
+  used the same layout, with all five dates sold out; it supplied no open sample.
+  Fixed the zero-card false-positive fallback, preserved state on failed requests,
+  added bounded fetches and isolated card parsing, and required a positive
+  registration link. Local standalone dry-run: 11 cards, zero open, exit 0.
+  Eight offline tests cover closed/unknown/open-policy cases, card boundaries,
+  and propagation of HTTP/network/shape failures. No database writes or Discord
+  sends were used; this entry does not establish CI deployment or delivery.
+
 ## Debug recipe
 ```bash
 # Dry-run (also prints the [calgary:candidate] / [calgary:dest] diagnostics)
 npx tsx scripts/scrapers/calgary.ts
 
-# DB state (checked_at fresh + slots=[] => running fine, just nothing open)
+# DB state (fresh checked_at proves an upsert, not source accuracy or delivery)
 SELECT city, exam_type, jsonb_array_length(slots) AS n,
        round(EXTRACT(EPOCH FROM (NOW()-checked_at))/60) AS checked_min_ago,
        checked_at, notified_at
@@ -79,6 +95,10 @@ FROM slot_monitor_state WHERE city='calgary';
 curl -s "http://web.archive.org/cdx/search/cdx?url=afcalgary.ca/exams/tcf/tcf-registrations-open*&output=json&collapse=digest&from=20260101"
 # raw archived HTML: http://web.archive.org/web/<timestamp>id_/<original-url>
 ```
-- **In CI logs, grep `[calgary:`** — `OPEN-MARKUP` firing = a real opening was
-  seen (validate detection); a `[calgary:dest]` `classes` value ≠ `["exam-card"]`
-  = modifier-class state in the wild (already handled by the hardened split).
+- **In CI logs, search `[calgary:`**. `OPEN-MARKUP` means the positive-link
+  rule matched; inspect it to validate the first real opening. A changed or
+  ambiguous shape should be visible as an error, never interpreted as open.
+
+```bash
+node --import tsx --test tests/calgary.test.ts
+```

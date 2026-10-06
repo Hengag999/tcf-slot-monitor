@@ -7,7 +7,7 @@
 | **Page(s)** | `https://www.alliancefrancaise.ca/en/language/exams/tcf-canada/` |
 | **Discord** | #vancouver (bot "Vancouver Bot") |
 | **DB key** | city=`vancouver`, exam_type=`TCF Canada` (the `slots` JSONB holds reminder tracking, not slots) |
-| **Status** | ✅ healthy — reminder chains verified firing live (new/3d/2d/1d) — last assessed 2026-07-07 |
+| **Status** | Local repair verified 2026-10-06; production still uses first-page-only parser until deployment |
 
 ## How it works
 - `scrapeVancouver()` returns **every exam row** on the TCF-Canada listing table
@@ -48,7 +48,7 @@ fully replaces the old 0→N availability ping for Vancouver.
   the listing page when the Bookings cell has no link.
 - **Sub-day reminders are deliberately absent** — don't "fix" their absence; the cron
   can't deliver them reliably.
-- **No open-now ping** by design (decided 2026-06-13). Easy to re-add in
+- **No separate open-now threshold** by design (decided 2026-06-13). Easy to re-add in
   `computeReminders` (`THRESHOLDS` + a kind for lead 0) if wanted.
 
 ## Incident log
@@ -90,3 +90,16 @@ curl -s "https://www.alliancefrancaise.ca/en/language/exams/tcf-canada/" | grep 
 ```
 - The reminder logic is pure (`computeReminders(exams, prevTracking, nowMs)`), so new
   scenarios are easy to unit-test with a throwaway script (see the 2026-06-13 incident).
+
+
+## 2026-10-06 investigation and local repair
+
+Discord's latest observed ping is September 14 06:38 China time (the 1-day reminder for September 14 15:00 Pacific). The database is fresh at the latest October 6 GitHub run, but freshness hid incomplete discovery: the old parser read only the first 15 rows.
+
+The official table currently has **95 rows over 3 pages (15 + 60 + 20)**. There are 58 closed sittings and **37 future registrations**: 25 New Westminster, 12 Vancouver. All 37 open November 2, 2026 at 15:00 Pacific (November 3 07:00 China time). None are Victoria. A read-only preview against existing tracking yields 37 new-session reminders and no replay of historical closed sessions.
+
+The shared parser now follows the actual Show More links, rejecting an incomplete traversal, and gives each sitting a location/schedule-aware identity. The former label slug conflated 26 distinct rows in this snapshot; `legacyExamKey` migrates consumed reminders without replaying them. Notification copy includes the location. Closed/full historical rows are baselined silently and countdowns stop at opening. A missing webhook cannot consume reminder state.
+
+Two three-day batches were visible in Discord on September 12 at 06:01 and 08:07 China time. The precise historical cause was not established; stable identities and serialized workflow runs address current duplication risks but do not prove that cause.
+
+These changes are locally tested. No repaired production run or new Discord delivery has occurred in this assessment. The older sections above record historical behavior; the updated engine supersedes their allowance for announcing closed rows.

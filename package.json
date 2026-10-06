@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --import tsx --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit --target es2022 --module esnext --moduleResolution bundler --esModuleInterop --skipLibCheck scripts/scrape-slots.ts scripts/scrapers/*.ts src/lib/*.ts tests/*.test.ts"
   },
   "keywords": [],
   "author": "",

@@ -2,111 +2,90 @@
 
 | | |
 |---|---|
-| **Platform** | **Hybrid** — E-TCF: Active Communities `activities/list` (category 30); P-TCF: Alliance Française CM API (category 368). Availability for both confirmed via the AC detail API. |
-| **Diff strategy** | 0 → N transition (default). **Only city with two exam types.** |
-| **Page(s)** | E-TCF list: `anc.ca.apm.activecommunities.com/aftoronto/rest/activities/list` (cat 30) · P-TCF list: `cm-api.alliance-francaise.ca/groupcourses` (cat 368) · detail: `…/rest/activity/detail/{id}` |
+| **Platform** | E-TCF: Active Communities `activities/list` category 30. P-TCF: Alliance Française CM `/groupcourses` category 368. Both confirm candidates against the AC detail API. |
+| **Diff strategy** | 0 → N per exam type. Computer and paper have separate scrape outcomes, sharing Toronto's existing DB city key and Discord destination. |
+| **Page** | [Official registration page](https://www.alliance-francaise.ca/en/exams/tests/informations-about-tcf-canada/tcf-canada) |
 | **Discord** | #toronto |
-| **DB key** | city=`toronto`, exam_type=`E-TCF Canada` **and** `P-TCF Canada` (two rows) |
-| **Status** | ✅ hybrid rewrite (E-TCF moved to Active Communities) — last assessed 2026-06-13 |
+| **DB keys** | city=`toronto`, exam_type=`E-TCF Canada` and `P-TCF Canada` |
+| **Status** | **Locally repaired, 2026-10-06:** both computer and paper sources complete with zero bookable slots. Old fixed Chrome/124 User-Agent caused reproducible CM 403; the honest monitor User-Agent receives JSON. GitHub runner behavior must be verified after deployment. |
 
-## How it works
-The two exam types live in **different systems**, so the scraper reads each from
-its real source, then confirms availability for both against the same detail API
-(a session's CM id and its Active Communities activity id are the **same number**).
+## Current behavior
 
-- **E-TCF (computer, "4 modules")** comes from the **Active Communities**
-  `activities/list` API, `activity_category_ids: ["30"]` (POST, paginated via the
-  `page_info` header — currently 32 sittings across 2 pages). Each item carries
-  inline availability: `urgent_message.status_description` (e.g. `"Full"`) and
-  `already_enrolled`/`total_open`. Obviously-full sittings are dropped up front
-  (`CLOSED_LIST_STATUS` = `/full|closed|cancel|wait list|sold out/i`); the rest are
-  confirmed via detail. The exam **date** comes from the detail's `first_date`
-  (`"2026-09-04"`), or is decoded from the activity `number` `TCFC<DDMMYY>-XX`
-  (e.g. `TCFC040926-MS` → `2026-09-04`) — the two agree.
-- **P-TCF (paper, "4 modules")** comes from the **CM API** category `368` with
-  `enddate=gte&openspaces=1&status=0` (P-TCF isn't in Active Communities at all —
-  a keyword search returns nothing). Date/time from the first `date_patterns[]`.
-- Both feed a single candidate list, confirmed against the **AC detail** API
-  (`body.detail.space_status` ∉ `["Full","On Hold","Closed","Cancelled"]`),
-  concurrency-capped at 5. A garbled/blocked detail response → treated as *not
-  bookable* (false negative) rather than throwing the scrape.
+- `scrapeTorontoComputer()` reads all AC category 30 pages and selects explicit E-TCF products. Category 30 is shared by both formats: explicit P-TCF rows are ignored by this source, and unfamiliar product names fail visibly. It skips explicitly closed list rows, then confirms remaining candidates against `body.detail.space_status`, with at most five simultaneous detail requests. Dates prefer detail `first_date`, falling back to the validated `TCFC<DDMMYY>` activity number.
+- `scrapeTorontoPaper()` reads the CM category 368 list and confirms every candidate through AC detail. Its query now matches the public site's 300-row limit. Reaching the limit is reported as incomplete coverage instead of silently accepting a potentially truncated list.
+- The orchestrator calls these independently and restricts each snapshot to its own exam type. A failed paper source must preserve its previous row and must not prevent computer monitoring. Returning an unscoped partial Toronto array would be unsafe: missing exam types would otherwise be cleared by the orchestrator.
+- The retained `scrapeToronto()` aggregate rejects if either source fails. The standalone script uses both independent sources, prints each outcome and surviving results, and exits nonzero if coverage is incomplete.
+- Requests have a 20-second timeout and at most three attempts. Network failures, HTTP 429/5xx, and non-JSON responses are retried. Other HTTP errors such as 403 fail immediately. Requests identify themselves as `TCF-Slot-Monitor/1.0 (+https://github.com/Hengag999/tcf-slot-monitor)`; no cookies, clearance tokens, or browser runtime are required for the verified local result.
+- Missing list arrays, unsuccessful AC response envelopes, malformed rows, truncated/duplicate pagination, failed detail calls, missing detail status, and unknown status text are **unknown availability**, not a known-empty result. They fail that exam type so persistence can retain its previous state.
+- Explicit closed statuses include full, on hold, closed, cancelled, waitlist, sold out, and not open. Positive detail handling accepts numeric openings/spaces/spots/seats, `Open`, `Available`, and `Unlimited openings`. New wording fails visibly rather than assuming a vacancy. `Unlimited openings` was observed on public non-exam AC activities in this assessment; an actual open E-TCF sitting was not available for end-to-end confirmation.
 
-## Known failure modes / gotchas
-- **Stale-category blind spot (the original sin, found 2026-06-13).** E-TCF used to
-  be read from **CM API category 367**, but AF Toronto migrated the live E-TCF
-  product to Active Communities (the CM `367` listings are now an old *"E-TCF – 5
-  modules"* product, **all past-dated** — `openspaces` filtered them to zero, so the
-  scraper silently saw no E-TCF and never could). The lesson: a 0→N city sitting at
-  permanent zero may be watching a **dead source**, not a quiet one — cross-check the
-  list against the platform's own category search. Fix: read E-TCF from Active
-  Communities category 30 (this rewrite).
-- **WAF/bot challenge on datacenter IPs (also 2026-06-13).** Node's `fetch`
-  sends **no `User-Agent`**; from a GitHub Actions runner the CM API answers **HTTP
-  200 with an HTML interstitial** instead of JSON. `res.ok` is true, so the old
-  `!res.ok` guard missed it and `res.json()` threw the opaque `Unexpected token '<',
-  "<html><hea"...`. The scrape threw → city skipped → `checked_at` froze. **It works
-  fine from a residential IP**, so it can't be reproduced locally — only in CI.
-  - Fix: send **browser-like headers** (real UA + `Accept`), and route both APIs
-    through a `fetchJson()` helper that **retries** (the challenge is intermittent —
-    it succeeded at 23:49 but failed at 01:54 and 06:12 the same night) and throws a
-    **legible** error (status + content-type + body snippet) on persistent non-JSON.
-  - `fetchAcDetail()` has the same headers and a **safe parse**: a non-JSON detail
-    response is logged and treated as *unavailable* (false negative) rather than
-    throwing the whole scrape.
-- **`enddate=gte` with no value is intentional** — the CM API treats it as
-  "end date ≥ today". Dropping `openspaces=1&status=0` returns the raw session set
-  incl. past/sold-out ones; the filters are what make the result "currently open".
-- **Open-state E-TCF status string is unobserved** — every sitting is `"Full"` right
-  now, so the exact `status_description` shown when a seat opens isn't known. The
-  pre-filter is built to *keep* anything that isn't a closed-state (empty / "Open" /
-  "N spots"), and detail `space_status` is the authoritative confirmation, so an
-  unexpected open string still flows through. First real opening logs `[toronto:OPEN]`.
-- **0 slots is the normal steady state**, not an error. Both DB rows at `n_slots=0`
-  with a *fresh* `checked_at` = healthy and quiet.
-- The AC detail API does **not** throw the scrape on a bad response (returns null →
-  not bookable), so a flaky detail endpoint under-reports rather than freezing state.
+## Entry-point reconnaissance — 2026-10-06
 
-## Incident log
-- **2026-06-13 (hybrid rewrite)** — While confirming the WAF fix, found E-TCF had a
-  **silent blind spot**: it was read from CM category `367`, but the live E-TCF
-  product had migrated to Active Communities (category 30, 32 future sittings). CM
-  `367` now only holds an old *"E-TCF – 5 modules"* product, all past-dated → the
-  `openspaces` filter zeroed it, so the scraper saw **no E-TCF and never could**
-  (likely orphaned ~Jun 10, the last E-TCF ping). **Fix:** rewrote Toronto as a
-  hybrid — E-TCF from the AC `activities/list` API (cat 30), P-TCF still from CM 368,
-  both confirmed via AC detail. Verified: live dry-run now sees all 32 E-TCF sittings
-  (0 bookable — all Full) + 0 P-TCF (all full); 15/15 unit checks on the date decode,
-  status pre-filter, and `isBookable`; real detail `first_date` (`2026-09-04`) matches
-  the `number` decode.
-- **2026-06-13 (WAF fix)** — DB `checked_at` ~7.3h stale (frozen at the 06-12 23:49
-  run) while later CI runs (01:54, 06:12) showed `[toronto] Scraper error, skipping:
-  SyntaxError: Unexpected token '<', "<html><hea"...` at `fetchSessions`. Root cause:
-  CM API served a **WAF/bot-challenge HTML page** (200) to the GitHub Actions IP
-  because the request had no `User-Agent`; local runs (JSON) couldn't reproduce it.
-  Intermittent, not a hard IP block. **Fix:** browser headers + retrying `fetchJson()`
-  with legible non-JSON errors. Verified on a post-push `workflow_dispatch` run
-  (27460062153): clean JSON parse, no skip, both rows refreshed.
+The official registration page still renders `<load-courses>` with CM categories **367** (E-TCF) and **368** (P-TCF). Its public client, `/media/com_aftcm/js/loadcourses/loadcourses.js`, calls `https://cm-api.alliance-francaise.ca/groupcourses` directly using `enddate=gte`, `status=0`, `openspaces=1`, `limit=300`, and the category. There was no alternative paper endpoint in that client.
+
+The original paper request returned HTTP 403 locally, reproducing the reported CI failure. The logged-in browser could read the same public endpoint, which prompted a bounded ordinary-header comparison. Interleaved requests to the same URL in the same Node process yielded:
+
+| User-Agent | Result |
+|---|---|
+| Existing Chrome/124 Windows string | HTTP 403 on both interleaved attempts |
+| Chrome/145 macOS string | HTTP 200 JSON |
+| Chrome/145 Windows string | HTTP 200 JSON |
+| Honest `TCF-Slot-Monitor/1.0` identifier | HTTP 200 JSON |
+
+The honest identifier is now used. It required no Origin/Referer override, cookies, private credentials, clearance tokens, or browser dependency. These results isolate the old User-Agent as a trigger in the local test; they do not establish every rule used by the server or guarantee future/GitHub access.
+
+A successful page load alone does not validate its session lists: the page's Angular error handler sets `loading=false` without reporting the failed request to visitors.
+
+Active Communities was reachable:
+
+- Category `30`: one E-TCF sitting, ID **129462**, number **TCFC091026-MS**, date **2026-10-09**, list status **Full**, **14/14** enrolled. Its detail independently reported `first_date=2026-10-09` and `space_status=Full`.
+- Searching `activity_other_category_ids=["368"]`, keyword `P-TCF`, and keyword `paper` returned successful empty lists. This is **not proof of complete paper coverage**, so these were not adopted as a fallback. Raw CM records show that paper also belongs to category 30; the absence from AC search is consistent with its current On Hold/hidden state, not proof of a separate booking system.
+- Searching keyword `TCF` also returns preparation/orientation products. Those must not be mistaken for exam availability.
+- With the repaired User-Agent, CM's filtered paper response was `{items: [], page: 1, totalItems: 0, limit: "300"}`.
+- Removing availability/date/status filters from CM category 368 returned 44 records. Four were future paper exams: October 23 (IDs 129194, 129197) and November 13 (129199, 129201). All four had zero open spaces and status 4, and each independent AC detail reported **On Hold**. This supports the current empty filtered result and confirms that the paper category still contains future exams.
+- CM paper times can be `9:00:00`; output normalizes this to `09:00` rather than slicing it into the malformed `9:00:`.
+
+### Possible additional service: registration-release reminders
+
+The official page publishes the following **2027 quarterly registration opening dates, at 10:00 a.m.**:
+
+| Quarter | Registration release |
+|---|---|
+| Q1, Jan–Mar | December 1, 2026 |
+| Q2, Apr–Jun | March 2, 2027 |
+| Q3, Jul–Sep | May 20, 2027 |
+| Q4, Oct–Dec | August 17, 2027 |
+
+A reminder for these releases would be useful independently of cancellation-seat monitoring. The page does **not explicitly name a timezone**. No reminder parser, hardcoded epochs, or automatic notifications were added on an assumed timezone. Confirm the timezone and whether the release dates apply uniformly to both formats before implementing; reread the live schedule rather than treating this dated table as permanent configuration.
+
+## Verification — 2026-10-06
+
+- `node --import tsx --test tests/toronto.test.ts`: **17 passing checks**, covering independent source failure, refusal of aggregate partial snapshots, valid empty states, malformed/error envelopes, pagination completeness, detail confirmation and failure, status/date safety, paper date/time handling, and prevention of paper-to-computer mislabeling.
+- Targeted TypeScript check of scraper and tests passed with ES2022/NodeNext.
+- Before the User-Agent repair, the live standalone printed the surviving computer result plus paper HTTP 403 and exited **1**, verifying partial-failure reporting. After the repair, computer completed with **1 listed sitting, 0 candidates, 0 available** and paper completed with **0 bookable sessions**; final exit code **0**. GitHub runner access and actual open-session notification delivery remain unverified.
+- No database writes, Discord messages, commits, or deployment were performed by this Toronto change.
+
+## Historical incidents
+
+### 2026-06-13 — hybrid source migration
+
+E-TCF previously used CM category 367. The then-current reconnaissance found that category held an old “E-TCF – 5 modules” product with past sessions, while current “4 modules” exams lived under Active Communities category 30. Moving E-TCF discovery to AC exposed 32 then-future sittings. That count is historical, not an expected minimum.
+
+### 2026-06-13 — intermittent CM challenge
+
+GitHub runner requests received HTML challenges with HTTP 200, freezing Toronto state while the overall workflow stayed green. Browser-like headers plus retries allowed the tested follow-up run (`27460062153`) to complete. The later Chrome/124-triggered 403 demonstrates that this was an observed workaround, not a guarantee that a browser-looking header permanently restores access.
 
 ## Debug recipe
+
 ```bash
-# Dry-run (prints E-TCF/P-TCF source counts, candidates, then bookable slots)
-npx tsx scripts/scrapers/toronto.ts
+# Both sources, no DB writes or Discord, explicit partial-failure exit status:
+node --import tsx scripts/scrapers/toronto.ts
 
-# E-TCF source of truth — Active Communities category 30 (POST). status_description
-# per sitting lives in urgent_message; the page_info header drives pagination.
-# (Easier to probe with a throwaway tsx script than curl — see git history.)
+# Regression checks, entirely mocked network:
+node --import tsx --test tests/toronto.test.ts
 
-# P-TCF source — CM API category 368 (from a datacenter IP this may return WAF HTML):
-curl -s 'https://cm-api.alliance-francaise.ca/groupcourses?enddate=gte&limit=150&openspaces=1&orderby=course.startDate&othercategory=368&status=0' | head -c 200
-
-# DB state (two rows — one per exam type)
-SELECT city, exam_type, jsonb_array_length(slots) AS n_slots,
-       round(EXTRACT(EPOCH FROM (NOW()-checked_at))/60) AS checked_min_ago, checked_at
-FROM slot_monitor_state WHERE city='toronto' ORDER BY exam_type;
-
-# Did Toronto throw in CI? (the run "succeeds" even when a city is skipped)
-gh run view <run-id> --log | grep -i toronto
+# Source and persistence errors in a specific GitHub run:
+gh run view <run-id> --log | rg -i toronto
 ```
-- If a real E-TCF opening is ever missed, check the `[toronto:etcf-candidate]` /
-  `[toronto:OPEN]` logs — they record the status string the platform shows when a
-  seat frees up, which is currently unobserved.
+
+Read DB freshness per exam type, not only per city. A fresh E-TCF row does not establish P-TCF health. Recheck the live source counts and current workflow logs; neither Discord silence nor a previously green CI run independently proves complete coverage.

@@ -1,31 +1,17 @@
-// Toronto scraper (hybrid: two sources, one per exam type)
-//
-// E-TCF (computer, "4 modules") lives in the Active Communities booking system
-//   under category 30. The old CM-API category 367 ("E-TCF - 5 modules") was a
-//   different, now-defunct product whose listings are all in the past — keying
-//   E-TCF off it was a silent blind spot. So E-TCF is read straight from the
-//   Active Communities activities/list API (which exposes availability inline)
-//   and confirmed against the detail API.
-// P-TCF (paper, "4 modules") exists ONLY in the CM API, category 368 (a keyword
-//   search for "P-TCF" in Active Communities returns nothing). So P-TCF keeps
-//   the CM-list path, confirmed against the same detail API.
-//
-// Availability for both is confirmed via the Active Communities detail API by
-// activity id — the CM session id and the Active Communities activity id are the
-// same number, which is what let the original detail-confirmation step work.
-//
-// The CM API answers datacenter IPs (GitHub Actions) with a WAF/bot-challenge
-// HTML page instead of JSON unless the request carries a real User-Agent; see
-// fetchJson() and BROWSER_HEADERS.
+// Toronto has two independently monitored exam types. Computer sessions use
+// Active Communities category 30; paper sessions still use CM category 368.
+// A CM failure must not disable the computer source. Both confirm candidates
+// against Active Communities detail; unknown detail fails that exam type so the
+// orchestrator can preserve its previous state instead of recording a false zero.
 
 export type ExamType = "E-TCF Canada" | "P-TCF Canada";
 
 export interface Slot {
   id: string;
   examType: ExamType;
-  date: string;       // "YYYY-MM-DD" (best-effort; never empty)
-  startTime?: string; // "HH:MM" (P-TCF only — AC list has no per-row time)
-  endTime?: string;   // "HH:MM"
+  date: string; // YYYY-MM-DD
+  startTime?: string;
+  endTime?: string;
   bookingUrl: string;
   availableSeats?: number;
 }
@@ -34,316 +20,292 @@ const CM_API_BASE = "https://cm-api.alliance-francaise.ca/groupcourses";
 const ACTIVE_API_BASE = "https://anc.ca.apm.activecommunities.com/aftoronto/rest/activity/detail";
 const AC_LIST_API = "https://anc.ca.apm.activecommunities.com/aftoronto/rest/activities/list?locale=en-US";
 const BOOKING_BASE = "https://anc.ca.apm.activecommunities.com/aftoronto/activity/search/detail";
+const CM_CATEGORY_PTCF = 368;
+const AC_CATEGORY_ETCF = "30";
+const CLOSED_STATUS = /full|on\s*hold|closed|cancel|wait\s*list|sold\s*out|not\s+(?:yet\s+)?open/i;
 
-const CM_CATEGORY_PTCF = 368; // paper-based (CM-only)
-const AC_CATEGORY_ETCF = "30"; // computer-based (Active Communities)
-
-// Statuses that mean "not bookable", checked against the detail API's space_status.
-const NON_BOOKABLE = ["Full", "On Hold", "Closed", "Cancelled"];
-// List-level pre-filter (urgent_message.status_description) to skip the obvious
-// full sittings before spending a detail call confirming each one.
-const CLOSED_LIST_STATUS = /full|closed|cancel|wait\s*list|sold\s*out/i;
-
-// Node's fetch sends no User-Agent by default, which trips the CM API's WAF from
-// datacenter IPs (it answers 200 with an HTML interstitial instead of JSON). A
-// real browser UA + Accept header gets past the soft challenge.
-const BROWSER_HEADERS = {
-  "User-Agent":
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+// Identify the monitor honestly. On 2026-10-06 the old fixed Chrome/124 UA
+// consistently received CM HTTP 403, while this UA received JSON without cookies.
+// Access can change; failures still remain explicit rather than becoming [].
+const REQUEST_HEADERS = {
+  "User-Agent": "TCF-Slot-Monitor/1.0 (+https://github.com/Hengag999/tcf-slot-monitor)",
   Accept: "application/json, text/plain, */*",
   "Accept-Language": "en-CA,en;q=0.9",
 };
 
-// GET a URL expecting JSON, with retry + a legible error on persistent non-JSON
-// (the WAF interstitial) instead of an opaque "Unexpected token '<'".
-async function fetchJson<T>(url: string, label: string): Promise<T> {
+async function fetchJson<T>(url: string, label: string, init: RequestInit = {}): Promise<T> {
   const MAX_ATTEMPTS = 3;
-  let lastErr: Error | null = null;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    let body = "";
-    let status = 0;
-    let contentType = "?";
+    let error: Error;
+    let retryable = true;
     try {
-      const res = await fetch(url, { headers: BROWSER_HEADERS });
-      status = res.status;
-      contentType = res.headers.get("content-type") ?? "?";
-      body = await res.text();
-    } catch (err) {
-      lastErr = new Error(`${label}: network error — ${(err as Error).message}`);
-    }
-
-    if (body) {
-      const trimmed = body.trimStart();
-      if (status >= 200 && status < 300 && (trimmed.startsWith("{") || trimmed.startsWith("["))) {
-        try {
-          return JSON.parse(trimmed) as T;
-        } catch (err) {
-          lastErr = new Error(`${label}: invalid JSON (status ${status}) — ${(err as Error).message}`);
-        }
-      } else if (status < 200 || status >= 300) {
-        lastErr = new Error(`${label}: HTTP ${status}`);
+      const res = await fetch(url, {
+        ...init,
+        headers: { ...REQUEST_HEADERS, ...init.headers },
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (!res.ok) {
+        error = new Error(`${label}: HTTP ${res.status}`);
+        // Repeating a denied or nonexistent request does not restore coverage.
+        retryable = res.status === 429 || res.status >= 500;
       } else {
-        lastErr = new Error(
-          `${label}: non-JSON response (status ${status}, content-type ${contentType}) — likely a bot/WAF challenge: ${trimmed.slice(0, 80)}…`,
-        );
+        const body = await res.text();
+        try {
+          return JSON.parse(body) as T;
+        } catch {
+          error = new Error(`${label}: non-JSON response (HTTP ${res.status}, ${res.headers.get("content-type") ?? "unknown content type"})`);
+        }
       }
+    } catch (err) {
+      error = new Error(`${label}: request failed — ${(err as Error).message}`);
     }
-
-    if (attempt < MAX_ATTEMPTS) {
-      console.warn(`  [toronto] ${lastErr?.message} — retry ${attempt}/${MAX_ATTEMPTS - 1}`);
-      await new Promise((r) => setTimeout(r, 1500 * attempt));
-    }
+    if (!retryable || attempt === MAX_ATTEMPTS) throw error;
+    console.warn(`  [toronto] ${error.message} — retry ${attempt}/${MAX_ATTEMPTS - 1}`);
+    await new Promise((resolve) => setTimeout(resolve, 1500 * attempt));
   }
-  throw lastErr ?? new Error(`${label}: failed after ${MAX_ATTEMPTS} attempts`);
+  throw new Error(`${label}: failed`);
 }
 
-// ----- P-TCF: CM API list -----
-
 interface DatePattern {
-  activity_start_date: string; // "YYYY-MM-DD"
-  activity_start_time: string; // "HH:MM:SS"
-  activity_end_time: string;   // "HH:MM:SS"
+  activity_start_date: string;
+  activity_start_time?: string;
+  activity_end_time?: string;
 }
 interface CMSession {
   id: number;
-  name: string;
-  start_date: string;
-  date_patterns: DatePattern[];
-}
-interface CMResponse {
-  items: CMSession[];
+  start_date?: string;
+  date_patterns?: DatePattern[];
 }
 
-async function fetchCmSessions(category: number): Promise<CMSession[]> {
-  const url =
-    `${CM_API_BASE}?enddate=gte&limit=150&openspaces=1&orderby=course.startDate` +
-    `&othercategory=${category}&status=0`;
-  const data = await fetchJson<CMResponse>(url, `CM API category ${category}`);
-  return data.items ?? [];
+async function fetchCmSessions(): Promise<CMSession[]> {
+  const url = `${CM_API_BASE}?enddate=gte&limit=300&openspaces=1&orderby=course.startDate&othercategory=${CM_CATEGORY_PTCF}&status=0`;
+  const data = await fetchJson<{ items: CMSession[] }>(url, `CM API category ${CM_CATEGORY_PTCF}`);
+  if (!Array.isArray(data?.items)) throw new Error("CM paper list: missing items array");
+  // The public client requests 300. At the limit, completeness is unknown.
+  if (data.items.length >= 300) throw new Error("CM paper list reached its 300-row limit; refusing an incomplete snapshot");
+  return data.items;
 }
-
-// ----- E-TCF: Active Communities list -----
 
 interface AcItem {
   id: number;
   name: string;
   number: string;
   statusDescription: string;
-  alreadyEnrolled: number;
-  totalOpen: number;
+  alreadyEnrolled?: number;
+  totalOpen?: number;
 }
 
-async function fetchAcCategory(catId: string): Promise<AcItem[]> {
+async function fetchAcCategory(): Promise<AcItem[]> {
   const out: AcItem[] = [];
-  let page = 1;
-  let totalPage = 1;
-  do {
+  let totalPages = 1;
+  let totalRecords = 0;
+  for (let page = 1; page <= totalPages; page++) {
     const page_info = JSON.stringify({ order_by: "", page_number: page, total_records_per_page: 20 });
-    const reqBody = JSON.stringify({
-      activity_search_pattern: {
-        skills: [], time_after_str: "", days_of_week: null, activity_select_param: 2,
-        center_ids: [], time_before_str: "", open_spots: null, activity_id: null,
-        activity_category_ids: [catId], date_before: "", min_age: null, date_after: "",
-        activity_type_ids: [], site_ids: [], for_map: false, geographic_area_ids: [],
-        season_ids: [], activity_department_ids: [], activity_other_category_ids: [],
-        child_season_ids: [], activity_keyword: "", instructor_ids: [], max_age: null,
-        custom_price_from: "", custom_price_to: "",
-      },
-      activity_transfer_pattern: {},
-    });
-
-    const res = await fetch(AC_LIST_API, {
+    const json = await fetchJson<any>(AC_LIST_API, `AC list category ${AC_CATEGORY_ETCF} page ${page}`, {
       method: "POST",
-      headers: { ...BROWSER_HEADERS, "Content-Type": "application/json", page_info },
-      body: reqBody,
+      headers: { "Content-Type": "application/json", page_info },
+      body: JSON.stringify({
+        activity_search_pattern: {
+          skills: [], time_after_str: "", days_of_week: null, activity_select_param: 2,
+          center_ids: [], time_before_str: "", open_spots: null, activity_id: null,
+          activity_category_ids: [AC_CATEGORY_ETCF], date_before: "", min_age: null, date_after: "",
+          activity_type_ids: [], site_ids: [], for_map: false, geographic_area_ids: [],
+          season_ids: [], activity_department_ids: [], activity_other_category_ids: [],
+          child_season_ids: [], activity_keyword: "", instructor_ids: [], max_age: null,
+          custom_price_from: "", custom_price_to: "",
+        },
+        activity_transfer_pattern: {},
+      }),
     });
-    const text = await res.text();
-    const trimmed = text.trimStart();
-    if (!res.ok || !trimmed.startsWith("{")) {
-      throw new Error(
-        `AC list category ${catId}: non-JSON/HTTP ${res.status} — likely a bot/WAF challenge: ${trimmed.slice(0, 80)}…`,
-      );
+    const items = json?.body?.activity_items;
+    const info = json?.headers?.page_info;
+    if (json?.headers?.response_code !== "0000" || !Array.isArray(items) ||
+        !Number.isInteger(info?.total_page) || info.total_page < 1 || info.total_page > 50 ||
+        !Number.isInteger(info.total_records) || info.total_records < 0 || info.page_number !== page) {
+      throw new Error(`AC computer list page ${page}: invalid response or pagination; availability unknown`);
     }
-    const json = JSON.parse(trimmed);
-    const items = json?.body?.activity_items ?? [];
-    for (const it of items) {
+    if (page > 1 && (info.total_page !== totalPages || info.total_records !== totalRecords)) {
+      throw new Error("AC computer list changed during pagination; refusing an incomplete snapshot");
+    }
+    totalPages = info.total_page;
+    totalRecords = info.total_records;
+    for (const item of items) {
+      if (!Number.isInteger(item?.id) || item.id <= 0 || typeof item.name !== "string" || typeof item.number !== "string" ||
+          typeof item.urgent_message?.status_description !== "string") {
+        throw new Error(`AC computer list page ${page}: malformed activity`);
+      }
       out.push({
-        id: it.id,
-        name: it.name ?? "",
-        number: it.number ?? "",
-        statusDescription: it.urgent_message?.status_description ?? "",
-        alreadyEnrolled: it.already_enrolled ?? 0,
-        totalOpen: it.total_open ?? 0,
+        id: item.id,
+        name: item.name,
+        number: item.number,
+        statusDescription: item.urgent_message.status_description,
+        alreadyEnrolled: item.already_enrolled,
+        totalOpen: item.total_open,
       });
     }
-    totalPage = json?.headers?.page_info?.total_page ?? 1;
-    page++;
-  } while (page <= totalPage && page <= 10);
+  }
+  if (out.length !== totalRecords || new Set(out.map((item) => item.id)).size !== out.length) {
+    throw new Error("AC computer list is incomplete or contains duplicate activities");
+  }
   return out;
 }
 
-// Decode the exam date from an Active Communities activity number, e.g.
-// "TCFC040926-MS" -> 04/09/26 (DD MM YY) -> "2026-09-04".
-function dateFromAcNumber(number: string): string | null {
-  const m = number.match(/TCFC(\d{2})(\d{2})(\d{2})/i);
-  if (!m) return null;
-  const [, dd, mm, yy] = m;
-  return `20${yy}-${mm}-${dd}`;
+function validDate(value: unknown): value is string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
-// ----- Shared availability confirmation (Active Communities detail) -----
+function toHHMM(value: string | undefined): string | undefined {
+  if (value == null) return undefined;
+  const match = value.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (!match || Number(match[1]) > 23 || Number(match[2]) > 59) {
+    throw new Error(`CM paper list: invalid session time ${JSON.stringify(value)}`);
+  }
+  return `${match[1].padStart(2, "0")}:${match[2]}`;
+}
+
+function dateFromAcNumber(number: string): string | undefined {
+  const match = number.match(/TCFC(\d{2})(\d{2})(\d{2})/i);
+  if (!match) return undefined;
+  const date = `20${match[3]}-${match[2]}-${match[1]}`;
+  return validDate(date) ? date : undefined;
+}
 
 interface AcDetail {
   spaceStatus: string;
   firstDate?: string;
 }
 
-async function fetchAcDetail(id: number): Promise<AcDetail | null> {
-  const url = `${ACTIVE_API_BASE}/${id}?locale=en-US`;
-  const res = await fetch(url, { headers: BROWSER_HEADERS });
-  if (!res.ok) {
-    console.warn(`  [toronto] Active detail API returned ${res.status} for ${id}`);
-    return null;
-  }
-  // Guard against the same non-JSON WAF interstitial — treat as unknown (caller
-  // decides), don't throw the whole scrape.
-  const text = await res.text();
-  let data: any;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    console.warn(`  [toronto] Active detail API non-JSON for ${id} — skipping`);
-    return null;
-  }
+async function fetchAcDetail(id: number): Promise<AcDetail> {
+  const data = await fetchJson<any>(`${ACTIVE_API_BASE}/${id}?locale=en-US`, `AC detail ${id}`);
   const detail = data?.body?.detail;
-  if (!detail) return null;
-  return { spaceStatus: detail.space_status ?? "", firstDate: detail.first_date };
+  if (data?.headers?.response_code !== "0000" || !detail ||
+      typeof detail.space_status !== "string" || !detail.space_status.trim() ||
+      (detail.activity_id != null && detail.activity_id !== id)) {
+    throw new Error(`AC detail ${id}: missing or invalid availability; preserving this exam type's previous state`);
+  }
+  return { spaceStatus: detail.space_status.trim(), firstDate: detail.first_date };
 }
 
-function isBookable(detail: AcDetail | null): boolean {
-  // No/garbled detail → conservatively treat as not bookable (false negative
-  // beats a false ping or a thrown scrape).
-  if (!detail) return false;
-  return !NON_BOOKABLE.includes(detail.spaceStatus);
+function isBookable(detail: AcDetail): boolean {
+  if (CLOSED_STATUS.test(detail.spaceStatus)) return false;
+  const count = detail.spaceStatus.match(/^(\d+)\s+(?:openings?|spaces?|spots?|seats?)(?:\s+(?:available|remaining))?$/i);
+  if (count) return Number(count[1]) > 0;
+  // Unlimited openings was observed in current AC details. Numeric openings and
+  // explicit Open/Available are supported; unfamiliar wording is not a vacancy.
+  if (/^(?:unlimited openings|open|available)$/i.test(detail.spaceStatus)) return true;
+  throw new Error(`AC detail has unknown availability status: ${JSON.stringify(detail.spaceStatus)}`);
 }
 
-function toHHMM(time: string): string {
-  return time.slice(0, 5);
-}
-
-// A bookable candidate awaiting detail confirmation.
 interface Candidate {
   id: number;
   examType: ExamType;
-  date: string;
+  date?: string;
   startTime?: string;
   endTime?: string;
   availableSeats?: number;
-  bookingUrl: string;
 }
 
-export async function scrapeToronto(): Promise<Slot[]> {
-  // Gather candidates from both sources in parallel.
-  const [ptcfSessions, etcfItems] = await Promise.all([
-    fetchCmSessions(CM_CATEGORY_PTCF),
-    fetchAcCategory(AC_CATEGORY_ETCF),
-  ]);
-
-  // P-TCF: every CM session (already openspaces-filtered) is a candidate.
-  const ptcfCandidates: Candidate[] = ptcfSessions.map((s) => {
-    const pattern = s.date_patterns?.[0];
-    return {
-      id: s.id,
-      examType: "P-TCF Canada",
-      date: pattern?.activity_start_date ?? s.start_date.slice(0, 10),
-      startTime: pattern ? toHHMM(pattern.activity_start_time) : undefined,
-      endTime: pattern ? toHHMM(pattern.activity_end_time) : undefined,
-      bookingUrl: `${BOOKING_BASE}/${s.id}`,
-    };
-  });
-
-  // E-TCF: drop the obviously-full sittings up front (status_description), keep
-  // the rest as candidates to confirm via detail. In steady state every sitting
-  // is "Full", so this is usually empty.
-  const etcfOpen = etcfItems.filter((it) => !CLOSED_LIST_STATUS.test(it.statusDescription));
-  const etcfCandidates: Candidate[] = etcfOpen.map((it) => {
-    const seats = it.totalOpen - it.alreadyEnrolled;
-    return {
-      id: it.id,
-      examType: "E-TCF Canada",
-      date: dateFromAcNumber(it.number) ?? it.number,
-      availableSeats: seats > 0 ? seats : undefined,
-      bookingUrl: `${BOOKING_BASE}/${it.id}`,
-    };
-  });
-
-  console.log(
-    `[toronto] P-TCF: ${ptcfSessions.length} CM session(s) | ` +
-      `E-TCF: ${etcfItems.length} AC sitting(s), ${etcfOpen.length} not-full — confirming availability...`,
-  );
-  if (etcfOpen.length > 0) {
-    console.log(
-      `  [toronto:etcf-candidate] ${etcfOpen
-        .map((it) => `${it.number}(${it.statusDescription || "no-status"} ${it.alreadyEnrolled}/${it.totalOpen})`)
-        .join(", ")}`,
-    );
-  }
-
-  const candidates = [...ptcfCandidates, ...etcfCandidates];
+async function confirmCandidates(candidates: Candidate[]): Promise<Slot[]> {
   const slots: Slot[] = [];
-
-  // Confirm availability against the detail API, concurrency-capped.
   const CONCURRENCY = 5;
   for (let i = 0; i < candidates.length; i += CONCURRENCY) {
-    const batch = candidates.slice(i, i + CONCURRENCY);
-    const results = await Promise.all(
-      batch.map(async (c) => ({ c, detail: await fetchAcDetail(c.id) })),
-    );
-    for (const { c, detail } of results) {
-      if (!isBookable(detail)) {
-        if (detail && c.examType === "E-TCF Canada") {
-          console.log(`  [toronto] E-TCF ${c.id} not bookable (space_status: "${detail.spaceStatus}")`);
-        }
-        continue;
-      }
-      // For E-TCF, prefer the authoritative detail date when present.
-      const date = c.examType === "E-TCF Canada" && detail?.firstDate ? detail.firstDate : c.date;
-      if (c.examType === "E-TCF Canada") {
-        console.log(`  [toronto:OPEN] E-TCF ${c.id} bookable — date=${date} space_status="${detail?.spaceStatus}"`);
-      }
-      slots.push({
-        id: String(c.id),
-        examType: c.examType,
+    // Any unknown candidate fails this entire exam type; never return a partial
+    // snapshot that would clear a previously observed vacancy in persistence.
+    const results = await Promise.allSettled(candidates.slice(i, i + CONCURRENCY).map(async (candidate) => {
+      const detail = await fetchAcDetail(candidate.id);
+      if (!isBookable(detail)) return null;
+      const date = validDate(detail.firstDate) ? detail.firstDate : candidate.date;
+      if (!validDate(date)) throw new Error(`AC detail ${candidate.id}: no valid exam date`);
+      return {
+        ...candidate,
+        id: String(candidate.id),
         date,
-        startTime: c.startTime,
-        endTime: c.endTime,
-        bookingUrl: c.bookingUrl,
-        availableSeats: c.availableSeats,
-      });
+        bookingUrl: `${BOOKING_BASE}/${candidate.id}`,
+      } satisfies Slot;
+    }));
+    const failures = results.filter((result) => result.status === "rejected");
+    if (failures.length) {
+      throw new AggregateError(failures.map((result) => result.reason),
+        `${candidates[i].examType}: ${failures.length} detail check(s) failed; availability unknown`);
+    }
+    for (const result of results) {
+      if (result.status === "fulfilled" && result.value) slots.push(result.value);
     }
   }
-
   return slots;
 }
 
-// --- Local dry-run ---
-if (process.argv[1].endsWith("toronto.ts")) {
-  scrapeToronto()
-    .then((slots) => {
-      if (slots.length === 0) {
-        console.log("[toronto] No available slots found.");
-      } else {
-        console.log(`\n[toronto] ${slots.length} available slot(s):\n`);
-        for (const s of slots) {
-          const time = s.startTime && s.endTime ? ` — ${s.startTime} to ${s.endTime}` : "";
-          const seats = s.availableSeats != null ? ` (${s.availableSeats} seats)` : "";
-          console.log(`  [${s.examType}] ${s.date}${time}${seats}`);
-          console.log(`  ${s.bookingUrl}\n`);
-        }
+export async function scrapeTorontoComputer(): Promise<Slot[]> {
+  const items = await fetchAcCategory();
+  // Category 30 is TCF generally: CM paper records also reference it. Do not
+  // mislabel paper sessions if they become visible in the AC listing.
+  const computer = items.filter((item) => {
+    if (/^E[-\s]*TCF\b/i.test(item.name)) return true;
+    if (/^P[-\s]*TCF\b/i.test(item.name)) return false;
+    throw new Error(`AC TCF category has an unrecognized product: ${JSON.stringify(item.name)}`);
+  });
+  const candidates = computer.filter((item) => !CLOSED_STATUS.test(item.statusDescription));
+  console.log(`[toronto:computer] ${computer.length} E-TCF sitting(s) of ${items.length} TCF row(s), ${candidates.length} candidate(s)`);
+  return confirmCandidates(candidates.map((item) => {
+    const seats = (item.totalOpen ?? NaN) - (item.alreadyEnrolled ?? NaN);
+    return {
+      id: item.id,
+      examType: "E-TCF Canada",
+      date: dateFromAcNumber(item.number),
+      availableSeats: Number.isInteger(seats) && seats > 0 ? seats : undefined,
+    };
+  }));
+}
+
+export async function scrapeTorontoPaper(): Promise<Slot[]> {
+  const sessions = await fetchCmSessions();
+  console.log(`[toronto:paper] ${sessions.length} CM session(s)`);
+  return confirmCandidates(sessions.map((session) => {
+    if (!Number.isInteger(session?.id) || session.id <= 0) throw new Error("CM paper list: malformed session ID");
+    const pattern = session.date_patterns?.[0];
+    return {
+      id: session.id,
+      examType: "P-TCF Canada",
+      date: pattern?.activity_start_date ?? session.start_date?.slice(0, 10),
+      startTime: toHHMM(pattern?.activity_start_time),
+      endTime: toHHMM(pattern?.activity_end_time),
+    };
+  }));
+}
+
+const sources = [
+  { label: "E-TCF Canada", scrape: scrapeTorontoComputer },
+  { label: "P-TCF Canada", scrape: scrapeTorontoPaper },
+];
+
+// Retained for callers that require complete Toronto coverage. The orchestrator
+// uses the independent exports and scopes each result to its own exam type.
+export async function scrapeToronto(): Promise<Slot[]> {
+  const results = await Promise.allSettled(sources.map((source) => source.scrape()));
+  const failures = results.filter((result) => result.status === "rejected");
+  if (failures.length) throw new AggregateError(failures.map((result) => result.reason), "Toronto coverage is incomplete");
+  return results.flatMap((result) => result.status === "fulfilled" ? result.value : []);
+}
+
+// Standalone dry-run: report every source, including healthy results when one
+// fails, then exit nonzero to make incomplete coverage visible to automation.
+if (process.argv[1]?.endsWith("/toronto.ts")) {
+  void Promise.allSettled(sources.map((source) => source.scrape())).then((results) => {
+    for (const [index, result] of results.entries()) {
+      const label = sources[index].label;
+      if (result.status === "rejected") {
+        console.error(`[toronto] ${label}: FAILED — availability unknown`, result.reason);
+        process.exitCode = 1;
+        continue;
       }
-    })
-    .catch((err) => {
-      console.error("[toronto] Error:", err);
-      process.exit(1);
-    });
+      console.log(`[toronto] ${label}: ${result.value.length} available slot(s)`);
+      for (const slot of result.value) {
+        const time = slot.startTime && slot.endTime ? ` — ${slot.startTime} to ${slot.endTime}` : "";
+        const seats = slot.availableSeats != null ? ` (${slot.availableSeats} seats)` : "";
+        console.log(`  ${slot.date}${time}${seats}\n  ${slot.bookingUrl}`);
+      }
+    }
+  });
 }

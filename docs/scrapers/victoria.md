@@ -7,7 +7,7 @@
 | **Page(s)** | `https://www.alliancefrancaise.ca/en/language/exams/tcf-canada/` (rows with a Victoria Location) |
 | **Discord** | #victoria (bot "BonTCF Victoria Bot") |
 | **DB key** | city=`victoria`, exam_type=`TCF Canada` (the `slots` JSONB holds reminder tracking, not slots) |
-| **Status** | ✅ healthy (no Victoria sittings exist anywhere) — last assessed 2026-07-13 |
+| **Status** | Benignly quiet in the complete shared listing on 2026-10-06; zero matching rows |
 
 ## How it works
 - `scrapeVictoria()` fetches the **same shared TCF-Canada listing** as Vancouver
@@ -73,3 +73,8 @@ SELECT city, exam_type, slots,
        checked_at, notified_at
 FROM slot_monitor_state WHERE city='victoria';
 ```
+
+
+## 2026-10-06 verification
+
+Latest observed Discord message: May 26 06:04 China time. Stored state was refreshed by the latest October 6 run with zero rows. The repaired shared parser follows all three public pages and finds 95 AF-CAPA sittings, **zero with a Victoria location**. This verifies the monitored source's current empty state, not the absence of exams at every possible provider. Shared pagination, stable identities, historical-row baselining, and pre-opening-only countdowns are implemented locally; production adoption remains pending.

@@ -2,70 +2,106 @@
 
 | | |
 |---|---|
-| **Platform** | Oncord CMS (embedded JSON) |
-| **Diff strategy** | per-date |
-| **Page(s)** | `https://www.afedmonton.com/products/af-tcf-canada/` |
+| **Platform** | Oncord exam-selector listing (migrated from the product combobox) |
+| **Diff strategy** | Per-date bookable availability; separate advance-registration reminders |
+| **Page(s)** | `https://www.afedmonton.com/en/exams/tcf/` and its Show More pages |
 | **Discord** | #edmonton (bot "BonTCF Edmonton Bot") |
-| **DB key** | city=`edmonton`, exam_type=`TCF Canada` |
-| **Status** | ✅ healthy (product genuinely sold out) — last assessed 2026-07-13 |
+| **Availability DB key** | city=`edmonton`, exam_type=`TCF Canada` |
+| **Status** | Local repair on 2026-10-06; deployment and subsequent notification delivery require verification |
 
-## How it works
-- Anchor on the **"choose your session"** label, then parse the next
-  `<script type="application/json">` options array (Oncord `<oncord-combobox>`).
-- Keep an option when `value != ""` **AND** label !~ `/sold out|complet|full/i`.
-  Edmonton leaves sold-out *dates* in the list with a `(Sold out)` suffix, so the
-  label filter — not the option's presence — decides availability.
-- **Full product sold-out** (every date gone): Oncord removes the combobox + label
-  entirely and shows a `<strong>SOLD OUT!</strong>` badge in the order controls.
-  Detect that badge → return `[]`; throw only if **neither** label nor badge is
-  found (genuinely unrecognised structure).
-- `[]` is the normal steady state.
+## Current source and booking signals
 
-## Known failure modes / gotchas
-- **Full sold-out removes the combobox** → the label anchor throws every run
-  (FIXED `4c5cbd7`). This is the Oncord-unavailable mode that also bit
-  Vancouver/Victoria — Edmonton was just never given the same handling.
-- **"sold out" is ambiguous on this page.** It appears (a) in available-state
-  option labels (`(Sold out)`) and (b) "complet" matches "**complet**e your
-  registration" in the sold-out body. So the page-level marker is matched as the
-  specific `<strong>SOLD OUT!</strong>` badge (`/<strong>\s*sold\s*out/i`), and
-  only in the no-label branch — never short-circuiting the available parse.
-- Per-date diff means silence genuinely = "no new dates" (usually benign/seasonal).
+The old `https://www.afedmonton.com/products/af-tcf-canada/` entry point now
+redirects to a **single closed exam order** at
+`/af/exam-selector/order/?exam_id=200`. That page no longer represents all
+sessions. Its missing combobox is a migration, not evidence that Edmonton has
+stopped offering exams.
+
+The official [TCF page](https://www.afedmonton.com/en/exams/tcf/) names itself as
+the source for current sessions and registration information. Its exam-selector
+table contains Exam, Schedules, Registration Dates, Location, Spots left, Price,
+and Bookings. The initial HTML contains only 15 rows. Follow the actual
+`dataShowMore` link until none remains; do not assume a single response is the
+complete inventory. On 2026-10-06 the next link was
+`?s8-datatable1_start=15&s8-datatable1_rows=60`, returning 13 further rows.
+The shared parser validates each page and fails the scrape if pagination is
+incomplete.
+
+`scrapeEdmontonExams()` returns all TCF Canada rows for reuse by availability and
+reminder processing. `bookableEdmontonSlots()` requires all of:
+
+- An actual booking anchor with `es-status-available`.
+- A same-origin `/af/exam-selector/order/?exam_id=<positive integer>` URL.
+- A positive seat count, or no numeric count when the booking control is present.
+- No registration-open epoch in the future.
+
+A numeric seat count alone is **not** bookability. The November 2 afternoon TCF
+row had 1 seat but `es-status-closed` on 2026-10-06; it must return no slot.
+The open anchor pattern was independently observed on six rows of the
+[same site's DELF listing](https://www.afedmonton.com/en/exams/delf-adults/),
+including exam ID 204. A live open **TCF** row was not available to inspect during
+this assessment; fixture tests exercise that same platform markup.
+
+The parser keeps exact normalized labels and schedules in stable identities.
+Edmonton uses `*` to distinguish afternoon sittings; stripping punctuation alone
+would collapse morning and afternoon exams. Booking IDs cannot be the sole key:
+closed rows contain no order link, so those IDs disappear when registration ends.
+
+## Advance notice alongside availability
+
+Current registration windows are often only about an hour, shorter than many
+observed GitHub scheduling gaps. The served platform JavaScript reads
+`data-opens-at` from `.es-status-opens-soon` rows and refreshes them into Book Now
+controls when their opening arrives. That supports advance reminders when the
+site publishes future epochs. Keep reminder state separate from availability
+state, and format opening times in `America/Edmonton`.
+
+Only future, actionable openings should generate advance reminders. Do not send
+"new session" pings for existing closed/full rows during migration or send delayed
+countdown reminders after an opening. The 2026-10-06 TCF listing had **no future
+opening epochs**; this is a dated observation, not a permanent expectation.
+Availability monitoring still handles a new bookable date or a reopening even
+when no future epoch was advertised.
+
+## Verification snapshot — 2026-10-06
+
+- Two unauthenticated public GETs returned **28 TCF Canada rows** (15 + 13),
+  spanning October 7–November 6, 2026.
+- All 28 rows showed `es-status-closed`; their registration windows had elapsed.
+- 27 rows showed SOLD OUT; the November 2 afternoon row showed 1 seat but remained
+  closed. Correct currently bookable result: **0**.
+- Six open DELF rows on the same host confirmed the actual Book Now link shape.
+- The repaired standalone scraper completed successfully: `28 listed TCF Canada
+  exam(s)`, `0 available slot(s)`. All four Edmonton fixture tests passed,
+  including an open row beyond the first page and closed-with-seats rejection.
+- The prior production scraper was still using the retired product entry point.
+  The parent maintenance assessment found its persisted `checked_at` frozen since
+  August 7 and its last visible Discord ping dated May 28.
+- Public listing reads and local tests do not establish deployed health or Discord
+  delivery. No registration was submitted during source inspection.
 
 ## Incident log
-- **2026-06-13** (`4c5cbd7`) — DB `checked_at` was frozen at 2026-05-29 (~14 days)
-  while every other city updated; dry-run threw `"choose your session" label not
-  found`. Cause: the whole product had sold out, so Oncord dropped the combobox
-  and showed the `SOLD OUT!` badge. Fix: detect the badge → return `[]`; throw
-  only when neither label nor badge present. Verified end-to-end with a mocked
-  fetch: available → parses open dates, fully sold-out → `[]`, unknown → throws.
-- **2026-07-13** — Re-assessed after 6.5-week Discord silence (last ping
-  2026-05-28, "24 juin"). **Verdict: benign, no action.** `checked_at` fresh;
-  dry-run takes the sold-out branch; independent fetch confirms the product page
-  is live and shows the `SOLD OUT!` badge with no session dates in the body. The
-  channel history shows Edmonton drips small batches (Apr–May pings), so a long
-  fully-sold-out stretch is consistent. Watch for the next batch to confirm the
-  available-parse path still works after the site's badge/combobox flip-flop.
+
+- **2026-06-13** (`4c5cbd7`) — Old product-level sold-out state removed the combobox.
+  Adding the specific SOLD OUT badge check repaired that historical page shape.
+- **2026-07-13** — Old product was sold out and local scrape took its empty branch.
+  This was a healthy observation at that time, not a guarantee across migration.
+- **2026-10-06** — Found the product redirect and current paginated exam-selector
+  listing. Replaced old combobox parsing with the shared listing parser, explicit
+  bookability checks, and reusable listed-exam output for advance reminders.
 
 ## Debug recipe
+
 ```bash
-# Dry-run against the live site
-npx tsx scripts/scrapers/edmonton.ts
-#   "product sold out (session combobox removed) — 0 available" => sold-out branch OK
-#   a THROW about the label/badge => genuinely new structure, inspect the page
+# Public reads only; no database writes or Discord messages.
+node --import tsx scripts/scrapers/edmonton.ts
+node --import tsx --test tests/edmonton.test.ts
 
-# DB state (stale checked_at => scraper throwing & being skipped)
-SELECT city, exam_type, jsonb_array_length(slots) AS n,
-       round(EXTRACT(EPOCH FROM (NOW()-checked_at))/60) AS checked_min_ago,
-       checked_at, notified_at
-FROM slot_monitor_state WHERE city='edmonton';
-
-# Inspect the live page structure when debugging a throw
-#   look for: "choose your session" label, <script type="application/json"> count,
-#   oncord-combobox count, and <strong>SOLD OUT!</strong> badge
-curl -s "http://web.archive.org/cdx/search/cdx?url=afedmonton.com/products/af-tcf-canada*&output=json&from=20260101"
+# Full pipeline inspection still requires --dry-run.
+node --import tsx scripts/scrape-slots.ts --dry-run
 ```
-- When debugging, remember the two healthy shapes: **available** = label +
-  `<script type="application/json">` options; **sold-out** = no label, no combobox,
-  `<strong>SOLD OUT!</strong>` badge. Anything else → throw is correct (it surfaces
-  a real structure change via a stale `checked_at`).
+
+A healthy dry-run reports the total listed rows and currently bookable count.
+Investigate fetch/pagination/parser errors rather than interpreting them as zero
+availability. When diagnosing a future regression, inspect the official TCF
+entry point, every Show More page, the Bookings cell, and its destination URL.

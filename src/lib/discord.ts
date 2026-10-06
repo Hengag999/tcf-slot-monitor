@@ -82,6 +82,7 @@ export async function postDiscord(webhookUrl: string, content: string): Promise<
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ content: chunk }),
+      signal: AbortSignal.timeout(20_000),
     });
 
     if (!res.ok) {
