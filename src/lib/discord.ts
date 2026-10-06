@@ -76,18 +76,58 @@ function chunkForDiscord(content: string, limit = DISCORD_CONTENT_LIMIT): string
  * messages (only the first carries the @everyone ping, which sits on line 1).
  * Throws on a non-2xx response.
  */
-export async function postDiscord(webhookUrl: string, content: string): Promise<void> {
-  for (const chunk of chunkForDiscord(content)) {
-    const res = await fetch(webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: chunk }),
-      signal: AbortSignal.timeout(20_000),
-    });
+export async function postDiscord(
+  webhookUrl: string,
+  content: string,
+  options: { fetchImpl?: typeof fetch; sleep?: (ms: number) => Promise<void> } = {},
+): Promise<void> {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+  const chunks = chunkForDiscord(content);
+  let waitedMs = 0;
+  const pause = async (seconds: number | null) => {
+    if (seconds == null || seconds < 0 || !Number.isFinite(seconds)) {
+      throw new Error("Discord rate limit has no valid retry delay");
+    }
+    const ms = Math.ceil(seconds * 1000) + 100;
+    if (ms > 60_000 || waitedMs + ms > 120_000) {
+      throw new Error("Discord rate-limit wait exceeds this run's bounded retry budget");
+    }
+    waitedMs += ms;
+    await sleep(ms);
+  };
 
-    if (!res.ok) {
+  for (const [index, chunk] of chunks.entries()) {
+    for (let attempt = 0; ; attempt++) {
+      const res = await fetchImpl(webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: chunk }),
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (res.ok) {
+        if (index < chunks.length - 1 && res.headers.get("X-RateLimit-Remaining") === "0") {
+          await pause(secondsValue(res.headers.get("X-RateLimit-Reset-After")));
+        }
+        break;
+      }
       const body = await res.text();
-      throw new Error(`Discord webhook failed (${res.status}): ${body}`);
+      if (res.status !== 429 || attempt >= 3) {
+        throw new Error(`Discord webhook failed (${res.status}): ${body}`);
+      }
+      let retryAfter: number | null = null;
+      try { retryAfter = secondsValue(JSON.parse(body).retry_after); } catch { /* use header */ }
+      const headerDelay = secondsValue(res.headers.get("Retry-After"));
+      const delays = [retryAfter, headerDelay].filter((value): value is number => value != null);
+      console.warn(`[discord] Rate limited; retrying chunk ${index + 1}/${chunks.length}`);
+      // 429 rejects this chunk; resume it without replaying already accepted chunks.
+      await pause(delays.length ? Math.max(...delays) : null);
     }
   }
+}
+
+function secondsValue(value: unknown): number | null {
+  if ((typeof value !== "string" && typeof value !== "number") || value === "") return null;
+  const seconds = Number(value);
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds : null;
 }

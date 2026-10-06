@@ -65,13 +65,14 @@ Unknown markup and request failures now throw, preserving prior state. A bookabl
 - Every scrape failure now contributes to a nonzero final result, after other sources run; GitHub gets a per-source summary.
 - Missing webhooks and rejected notifications cannot consume pending availability/reminder events. Historical `notified_at` still is not proof of historical delivery.
 - Listing traversal, Toronto/Calgary requests, and webhook sends have time bounds; the job has a ten-minute limit.
+- Shipping preflight quantified the 37-entry recovery batch as five Discord messages. Sends now respect exhausted-bucket reset headers and retry rejected 429 chunks in place with bounded waits, following [Discord rate-limit guidance](https://docs.discord.com/developers/topics/rate-limits). Accepted earlier chunks are not replayed during these retries; other errors still stop and preserve pending state.
 - Workflow concurrency prevents overlapping monitor executions from racing state writes or double-sending. Running jobs are not cancelled mid-send.
 - Offline regression tests and TypeScript checks run before the monitor in CI.
 - Cron is offset from minute zero (`2-57/5`), but remains best-effort. This is not a cure for the observed multi-hour cadence. If reliable five-minute checks are required, use a scheduler/worker with an explicit cadence guarantee or an independently monitored scheduler that dispatches the existing job; no new infrastructure was provisioned here. Advance registration reminders are the useful complement when openings are brief.
 
 ## Validation and next production check
 
-- `npm test`: 55 offline tests pass; mocked I/O verifies source isolation, state preservation, missing-webhook behavior, pagination, identities, legacy reminder migration, cutoff/reschedule behavior, city timezone, and positive booking requirements.
+- `npm test`: 60 offline tests pass; mocked I/O verifies source isolation, state preservation, missing-webhook behavior, pagination, identities, legacy reminder migration, cutoff/reschedule behavior, city timezone, and positive booking requirements.
 - `npm run typecheck`: passes.
 - Full public-source dry-run: all nine cities / eleven sources pass after repairs. No database reads or writes and no Discord sends in that dry-run.
 - Separate authorized read-only state preview: 37 new BC reminder candidates, zero newly appearing North York dates. It did not consume those events.
