@@ -16,6 +16,10 @@
 - The orchestrator calls these independently and restricts each snapshot to its own exam type. A failed paper source must preserve its previous row and must not prevent computer monitoring. Returning an unscoped partial Toronto array would be unsafe: missing exam types would otherwise be cleared by the orchestrator.
 - The retained `scrapeToronto()` aggregate rejects if either source fails. The standalone script uses both independent sources, prints each outcome and surviving results, and exits nonzero if coverage is incomplete.
 - Requests have a 20-second timeout and at most three attempts. Network failures, HTTP 429/5xx, and non-JSON responses are retried. Other HTTP errors such as 403 fail immediately. Requests identify themselves as `TCF-Slot-Monitor/1.0 (+https://github.com/Hengag999/tcf-slot-monitor)`; no cookies, clearance tokens, or browser runtime are required for the verified local result.
+  The recognized CM paper HTTP 202 HTML SiteGround challenge is now an exception:
+  it stops after one request and lets the next scheduled run try again. Earlier
+  blocked runs repeated the same challenge on both immediate retries. This cuts
+  those unsuccessful requests; it does not establish a permanent access repair.
 - Missing list arrays, unsuccessful AC response envelopes, malformed rows, truncated/duplicate pagination, failed detail calls, missing detail status, and unknown status text are **unknown availability**, not a known-empty result. They fail that exam type so persistence can retain its previous state.
 - Explicit closed statuses include full, on hold, closed, cancelled, waitlist, sold out, and not open. Positive detail handling accepts numeric openings/spaces/spots/seats, `Open`, `Available`, and `Unlimited openings`. New wording fails visibly rather than assuming a vacancy. `Unlimited openings` was observed on public non-exam AC activities in this assessment; an actual open E-TCF sitting was not available for end-to-end confirmation.
 
@@ -92,6 +96,43 @@ E-TCF previously used CM category 367. The then-current reconnaissance found tha
 GitHub runner requests received HTML challenges with HTTP 200, freezing Toronto state while the overall workflow stayed green. Browser-like headers plus retries allowed the tested follow-up run (`27460062153`) to complete. The later Chrome/124-triggered 403 demonstrates that this was an observed workaround, not a guarantee that a browser-looking header permanently restores access.
 
 ## Debug recipe
+
+### Known paper challenge and failure-email policy — October 7, 2026
+
+The user accepts intermittent Toronto paper checks. Only a typed
+`TorontoPaperChallengeError` from CM category 368 receives the following policy;
+it requires HTTP 202, HTML, and a recognized SiteGround signature. Generic HTML,
+401/403 responses, malformed data, computer/detail failures, and errors from other
+cities remain immediate workflow failures. Database and Discord failures also
+remain immediate failures.
+
+- Less than one hour since the last successful paper check: show `DEGRADED` in
+  logs and the GitHub source summary, preserve paper availability state, and do
+  not fail the workflow for that challenge.
+- At or beyond one hour: fail one workflow run for the sustained challenge.
+  Later occurrences remain visibly degraded but do not repeat that failure until
+  a successful paper check rearms the policy. This records issuing a workflow
+  failure, not a receipt proving GitHub delivered an email.
+- A successful scrape must finish its notification/persistence work before it
+  resets the incident. A failed health-state read/write fails the workflow too.
+- Standalone/dry-run checks remain strict: without production history they report
+  the challenge as an error and perform no health-state writes.
+
+Health metadata lives in the existing monitor table under reserved key
+`(__monitor_health__, toronto/paper)`, separate from the actual Toronto availability
+rows. It stores version, last success, first challenge, and failure-reported times.
+Existing paper `checked_at` bootstraps the policy; if no successful snapshot exists,
+the first observed challenge starts the hour. No schema changes or new database
+permissions are needed. GitHub's existing concurrency group serializes updates.
+An overall successful workflow can therefore contain a tolerated degraded paper
+source; inspect its source summary for coverage.
+
+The official registration page and public course loader were rechecked while
+making this change and still use the same CM endpoint. Active Communities search
+is not a complete fallback for hidden paper records. There is no verified code-only
+fix for the host's access challenge. A provider-approved feed or site-owner-approved
+API access would address that issue more directly; changing headers, query strings,
+or hosts merely to evade the challenge is not part of this implementation.
 
 ```bash
 # Both sources, no DB writes or Discord, explicit partial-failure exit status:

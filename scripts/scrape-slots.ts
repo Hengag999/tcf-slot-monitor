@@ -1,5 +1,5 @@
 import "../src/lib/env"; // load .env.local before anything reads process.env
-import { scrapeTorontoComputer, scrapeTorontoPaper } from "./scrapers/toronto";
+import { scrapeTorontoComputer, scrapeTorontoPaper, TorontoPaperChallengeError } from "./scrapers/toronto";
 import { scrapeCalgary } from "./scrapers/calgary";
 import { scrapeHalifax } from "./scrapers/halifax";
 import { scrapeOttawa } from "./scrapers/ottawa";
@@ -10,6 +10,7 @@ import { scrapeTcfListing, type ExamSelectorRow } from "../src/lib/examSelector"
 import { getPrevState, upsertState } from "../src/lib/db";
 import { notifyDiscord } from "../src/lib/discord";
 import { runRegistrationReminders, type RegistrationExam, type ReminderOptions } from "../src/lib/registrationReminders";
+import { recordPaperChallenge, recordPaperSuccess } from "../src/lib/torontoPaperHealth";
 
 // Common shape that all scrapers satisfy
 export interface MonitorSlot {
@@ -175,6 +176,7 @@ export async function runMonitor(
   sources: CityConfig[] = createSources(),
   dryRun = DRY_RUN,
   io: MonitorDependencies = dependencies,
+  now: () => number = Date.now,
 ): Promise<void> {
   if (dryRun) console.log("=== DRY RUN — no DB writes, no Discord notifications ===\n");
   const failures: string[] = [];
@@ -186,6 +188,22 @@ export async function runMonitor(
     try {
       allSlots = await city.scrape();
     } catch (err) {
+      if (!dryRun && source === "toronto/paper" && err instanceof TorontoPaperChallengeError) {
+        try {
+          const decision = await recordPaperChallenge(io, now());
+          const detail = decision.action === "alert" ? "one-hour outage — alert issued"
+            : decision.action === "already-reported" ? "outage already reported — repeats suppressed"
+            : "within one-hour grace period";
+          console.warn(`[${source}] Known SiteGround challenge: ${detail}; ${decision.minutesWithoutSuccess} min without success; availability state preserved`);
+          results.push({ source, status: `DEGRADED — ${detail}; state preserved` });
+          if (decision.action === "alert") failures.push(`${source} (one-hour challenge outage)`);
+        } catch {
+          console.error(`[${source}] Health-state check/persistence failed; cannot safely suppress challenge`);
+          failures.push(`${source} (health state)`);
+          results.push({ source, status: "HEALTH STATE FAILED — availability state preserved" });
+        }
+        continue;
+      }
       console.error(`[${source}] Scraper error, skipping:`, err);
       failures.push(`${source} (scrape)`);
       results.push({ source, status: "SCRAPE FAILED — state preserved" });
@@ -193,6 +211,7 @@ export async function runMonitor(
     }
     try {
       await processCity(city, allSlots, dryRun, io);
+      if (!dryRun && source === "toronto/paper") await recordPaperSuccess(io, now());
       results.push({ source, status: "OK" });
     } catch (err) {
       console.error(`[${source}] Notify/persist error, skipping:`, err);

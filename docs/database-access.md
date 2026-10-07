@@ -16,6 +16,12 @@ The monitor and the optional Vancouver reconciliation both fit this scope.
 Neither needs deletion, sequences, ownership, grant options, schema creation,
 role memberships, or administrative role attributes.
 
+The Toronto paper challenge policy also stores a versioned health record in this
+same table at `(__monitor_health__, toronto/paper)`. Its timestamps and incident
+marker are separate from availability snapshots and Discord delivery state. This
+requires no additional table, schema, or role permissions. See the
+[Toronto runbook](scrapers/toronto.md) for the one-hour alert policy.
+
 Create this role through SQL: roles created through the Neon Console/API can
 receive elevated Neon membership. Use `LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
 NOINHERIT NOREPLICATION NOBYPASSRLS`, a separately generated password, no role

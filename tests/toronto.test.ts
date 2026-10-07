@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, mock, test } from "node:test";
-import { scrapeToronto, scrapeTorontoComputer, scrapeTorontoPaper } from "../scripts/scrapers/toronto";
+import { scrapeToronto, scrapeTorontoComputer, scrapeTorontoPaper, TorontoPaperChallengeError } from "../scripts/scrapers/toronto";
 
 const item = (id = 129462, status = "Full", number = "TCFC091026-MS") => ({
   id, number, name: "E-TCF CANADA - 4 modules",
@@ -66,13 +66,14 @@ test("HTML challenges remain failed snapshots and log only bounded diagnostic me
     },
   }));
   await assert.rejects(scrapeTorontoPaper, (error: Error) => {
+    assert.ok(error instanceof TorontoPaperChallengeError);
     assert.match(error.message, /HTTP 202, text\/html; classification=siteground-challenge/);
     assert.match(error.message, /server=nginx, proxyCache=MISS, retryAfterSeconds=30/);
     assert.doesNotMatch(error.message, new RegExp(secret));
     return true;
   });
-  assert.equal(fetchMock.mock.calls.length, 3);
-  assert.equal(warnings.mock.calls.length, 2);
+  assert.equal(fetchMock.mock.calls.length, 1);
+  assert.equal(warnings.mock.calls.length, 0);
   for (const call of warnings.mock.calls) assert.doesNotMatch(String(call.arguments[0]), new RegExp(secret));
 });
 
@@ -81,7 +82,68 @@ test("unrecognized HTTP 202 HTML does not become a diagnosed challenge or an emp
   mock.method(globalThis, "setTimeout", (callback, _delay, ...args) => originalSetTimeout(callback, 0, ...args));
   mock.method(console, "warn", () => {});
   replaceFetch(() => new Response("<html>Temporary response</html>", { status: 202, headers: { "content-type": "text/html" } }));
-  await assert.rejects(scrapeTorontoPaper, /HTTP 202, text\/html; classification=unclassified/);
+  await assert.rejects(scrapeTorontoPaper, (error: Error) => {
+    assert.ok(!(error instanceof TorontoPaperChallengeError));
+    assert.match(error.message, /HTTP 202, text\/html; classification=unclassified/);
+    return true;
+  });
+});
+
+test("the known paper challenge also recognizes the fixed SiteGround body path", async () => {
+  const originalSetTimeout = globalThis.setTimeout;
+  mock.method(globalThis, "setTimeout", (callback, _delay, ...args) => originalSetTimeout(callback, 0, ...args));
+  mock.method(console, "warn", () => {});
+  replaceFetch(() => new Response('<html><script src="/.well-known/sgcaptcha/">', {
+    status: 202, headers: { "content-type": "text/html" },
+  }));
+  await assert.rejects(scrapeTorontoPaper, TorontoPaperChallengeError);
+});
+
+test("other paper HTTP failures and HTML classifications are not the known challenge", async () => {
+  const originalSetTimeout = globalThis.setTimeout;
+  mock.method(globalThis, "setTimeout", (callback, _delay, ...args) => originalSetTimeout(callback, 0, ...args));
+  mock.method(console, "warn", () => {});
+  const cases = [
+    { status: 401, headers: { "content-type": "text/html" }, body: "Unauthorized" },
+    { status: 403, headers: { "content-type": "text/html" }, body: "Forbidden" },
+    { status: 200, headers: { "content-type": "text/html", "sg-captcha": "1" }, body: "Challenge" },
+    { status: 202, headers: { "content-type": "text/html", "cf-mitigated": "challenge" }, body: "Challenge" },
+    { status: 202, headers: { "content-type": "application/json", "sg-captcha": "1" }, body: "{invalid" },
+  ];
+  for (const entry of cases) {
+    replaceFetch(() => new Response(entry.body, { status: entry.status, headers: entry.headers }));
+    await assert.rejects(scrapeTorontoPaper, (error: Error) => {
+      assert.ok(!(error instanceof TorontoPaperChallengeError));
+      return true;
+    });
+  }
+});
+
+test("a SiteGround challenge on AC computer search cannot receive the paper policy type", async () => {
+  const originalSetTimeout = globalThis.setTimeout;
+  mock.method(globalThis, "setTimeout", (callback, _delay, ...args) => originalSetTimeout(callback, 0, ...args));
+  mock.method(console, "warn", () => {});
+  replaceFetch(() => new Response("Challenge", { status: 202, headers: { "content-type": "text/html", "sg-captcha": "1" } }));
+  await assert.rejects(scrapeTorontoComputer, (error: Error) => {
+    assert.ok(!(error instanceof TorontoPaperChallengeError));
+    assert.match(error.message, /classification=siteground-challenge/);
+    return true;
+  });
+});
+
+test("a SiteGround challenge on paper AC detail remains a normal incomplete snapshot", async () => {
+  const originalSetTimeout = globalThis.setTimeout;
+  mock.method(globalThis, "setTimeout", (callback, _delay, ...args) => originalSetTimeout(callback, 0, ...args));
+  mock.method(console, "warn", () => {});
+  replaceFetch((url) => url.includes("cm-api")
+    ? response({ items: [{ id: 123, start_date: "2026-11-20" }] })
+    : new Response("Challenge", { status: 202, headers: { "content-type": "text/html", "sg-captcha": "1" } }));
+  await assert.rejects(scrapeTorontoPaper, (error: Error) => {
+    assert.ok(error instanceof AggregateError);
+    assert.ok(error.errors.every((cause) => !(cause instanceof TorontoPaperChallengeError)));
+    assert.match(error.message, /availability unknown/);
+    return true;
+  });
 });
 
 test("a later valid JSON retry recovers from a transient HTML response", async () => {

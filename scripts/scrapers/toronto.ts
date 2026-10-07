@@ -6,6 +6,15 @@
 
 export type ExamType = "E-TCF Canada" | "P-TCF Canada";
 
+// A known upstream challenge, not a successful availability snapshot. Only the
+// CM paper-list request can produce this type; callers must still preserve state.
+export class TorontoPaperChallengeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TorontoPaperChallengeError";
+  }
+}
+
 export interface Slot {
   id: string;
   examType: ExamType;
@@ -33,17 +42,20 @@ const REQUEST_HEADERS = {
   "Accept-Language": "en-CA,en;q=0.9",
 };
 
+type NonJsonClassification = "unclassified" | "siteground-challenge" | "cloudflare-challenge" | "access-challenge-signature";
+
+function classifyNonJsonResponse(res: Response, body: string): NonJsonClassification {
+  if (res.headers.has("sg-captcha") || /\/\.well-known\/(?:sgcaptcha|captcha)(?:[\s/?#"'<>]|$)/i.test(body)) {
+    return "siteground-challenge";
+  }
+  if (res.headers.get("cf-mitigated") === "challenge" || /\/cdn-cgi\/challenge-platform\//i.test(body)) return "cloudflare-challenge";
+  if (/<title[^>]*>\s*(?:captcha|access denied|just a moment|security check|verify you are human)\b/i.test(body)) return "access-challenge-signature";
+  return "unclassified";
+}
+
 // Only fixed classifications and numeric metadata reach logs. Never print the
 // response body, cookies, arbitrary header values, or challenge tokens.
-function nonJsonDiagnostics(res: Response, body: string): string {
-  let classification = "unclassified";
-  if (res.headers.has("sg-captcha") || /\/\.well-known\/(?:sgcaptcha|captcha)(?:[\s/?#"'<>]|$)/i.test(body)) {
-    classification = "siteground-challenge";
-  } else if (res.headers.get("cf-mitigated") === "challenge" || /\/cdn-cgi\/challenge-platform\//i.test(body)) {
-    classification = "cloudflare-challenge";
-  } else if (/<title[^>]*>\s*(?:captcha|access denied|just a moment|security check|verify you are human)\b/i.test(body)) {
-    classification = "access-challenge-signature";
-  }
+function nonJsonDiagnostics(res: Response, body: string, classification: NonJsonClassification): string {
   const details = [`classification=${classification}`, `bodyChars=${body.length}`];
   const server = res.headers.get("server")?.toLowerCase();
   if (server && ["nginx", "cloudflare", "apache"].includes(server)) details.push(`server=${server}`);
@@ -54,7 +66,12 @@ function nonJsonDiagnostics(res: Response, body: string): string {
   return details.join(", ");
 }
 
-async function fetchJson<T>(url: string, label: string, init: RequestInit = {}): Promise<T> {
+async function fetchJson<T>(
+  url: string,
+  label: string,
+  init: RequestInit = {},
+  options: { classifyTorontoPaperChallenge?: boolean } = {},
+): Promise<T> {
   const MAX_ATTEMPTS = 3;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     let error: Error;
@@ -77,7 +94,15 @@ async function fetchJson<T>(url: string, label: string, init: RequestInit = {}):
           const contentType = res.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase();
           const typeLabel = contentType && ["text/html", "text/plain", "application/json"].includes(contentType)
             ? contentType : "unknown content type";
-          error = new Error(`${label}: non-JSON response (HTTP ${res.status}, ${typeLabel}; ${nonJsonDiagnostics(res, body)})`);
+          const classification = classifyNonJsonResponse(res, body);
+          const message = `${label}: non-JSON response (HTTP ${res.status}, ${typeLabel}; ${nonJsonDiagnostics(res, body, classification)})`;
+          // Scope the policy hook to the exact observed paper-list failure. Other
+          // sources, statuses, content types, and unrecognized HTML remain errors.
+          error = options.classifyTorontoPaperChallenge && res.status === 202 && contentType === "text/html" && classification === "siteground-challenge"
+            ? new TorontoPaperChallengeError(message) : new Error(message);
+          // A recognized access challenge does not benefit from rapid retries.
+          // Preserve the snapshot and let the next scheduled check try again.
+          if (error instanceof TorontoPaperChallengeError) retryable = false;
         }
       }
     } catch (err) {
@@ -103,7 +128,7 @@ interface CMSession {
 
 async function fetchCmSessions(): Promise<CMSession[]> {
   const url = `${CM_API_BASE}?enddate=gte&limit=300&openspaces=1&orderby=course.startDate&othercategory=${CM_CATEGORY_PTCF}&status=0`;
-  const data = await fetchJson<{ items: CMSession[] }>(url, `CM API category ${CM_CATEGORY_PTCF}`);
+  const data = await fetchJson<{ items: CMSession[] }>(url, `CM API category ${CM_CATEGORY_PTCF}`, {}, { classifyTorontoPaperChallenge: true });
   if (!Array.isArray(data?.items)) throw new Error("CM paper list: missing items array");
   // The public client requests 300. At the limit, completeness is unknown.
   if (data.items.length >= 300) throw new Error("CM paper list reached its 300-row limit; refusing an incomplete snapshot");

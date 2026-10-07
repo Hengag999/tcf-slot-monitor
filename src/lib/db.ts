@@ -4,6 +4,7 @@ export interface StateRow {
   city: string;
   exam_type: string;
   slots: any[];
+  checked_at?: string | Date;
 }
 
 let _sql: ReturnType<typeof neon>;
@@ -21,7 +22,7 @@ function getSql() {
 export async function getPrevState(city: string): Promise<StateRow[]> {
   const sql = getSql();
   const rows = await sql`
-    SELECT city, exam_type, slots
+    SELECT city, exam_type, slots, checked_at
     FROM slot_monitor_state
     WHERE city = ${city}
   `;
