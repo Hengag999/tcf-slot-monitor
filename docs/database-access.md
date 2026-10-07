@@ -82,7 +82,28 @@ sequences**, and was denied an unrelated-table query. Both upsert branches and
 the reconciliation-style update passed in a deliberately aborted atomic
 transaction; no synthetic row remained. The same permission guard accepted the
 new login and rejected the old owner login. All **90 offline tests** and typecheck
-passed. Live scheduled-run verification follows below once observed.
+passed.
+
+| Scheduled run creation (UTC) | Run | Credential guard | Source checks |
+| --- | --- | --- | --- |
+| 05:26:06 | [37576283529](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37576283529) | Scoped login verified; zero forbidden privileges | 10/11 passed. Toronto paper returned HTTP 202 HTML classified as a SiteGround challenge; its prior state was preserved. |
+| 05:31:35 | [37576736775](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37576736775) | Scoped login verified; zero forbidden privileges | 10/11 passed; the same Toronto paper challenge recurred and prior state was preserved. |
+| 05:36:10 | [37577126084](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37577126084) | Scoped login verified; zero forbidden privileges | 11/11 passed, including Toronto paper; overall success. |
+
+This first run proves the encrypted GitHub secret uses the new login and normal
+state writes work. Its overall failure was the previously observed Toronto
+upstream challenge, not a database authentication or permission failure. A
+read-only follow-up confirmed every other source refreshed its state and Toronto
+paper retained its preceding snapshot.
+
+All three scheduled cycles passed the credential guard, 90 tests, and typecheck.
+The final cycle passed all 11 source checks, and a final read-only query confirmed
+all 12 stored state rows refreshed during that cycle with no permission-probe rows
+remaining. The temporary credential rollback copy was removed after verification.
+The credential cutover is complete. The existing temporary follow-up monitor was
+resumed at 15-minute intervals until three consecutive fully healthy scheduled
+runs are observed; Toronto's later success is recovery evidence, not proof its
+upstream challenge has been permanently repaired.
 
 References: [Neon roles](https://neon.com/docs/manage/roles),
 [PostgreSQL privileges](https://www.postgresql.org/docs/current/ddl-priv.html).
