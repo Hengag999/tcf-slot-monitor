@@ -28,6 +28,10 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run typecheck
+      - name: Verify scoped database credentials
+        run: npx tsx scripts/check-db-permissions.ts
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
       - name: Reconcile a verified partial Vancouver notification
         if: ${{ inputs.recover_vancouver_message_id != '' }}
         run: npx tsx scripts/recover-vancouver-notification.ts
