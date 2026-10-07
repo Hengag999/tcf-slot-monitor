@@ -33,6 +33,27 @@ const REQUEST_HEADERS = {
   "Accept-Language": "en-CA,en;q=0.9",
 };
 
+// Only fixed classifications and numeric metadata reach logs. Never print the
+// response body, cookies, arbitrary header values, or challenge tokens.
+function nonJsonDiagnostics(res: Response, body: string): string {
+  let classification = "unclassified";
+  if (res.headers.has("sg-captcha") || /\/\.well-known\/(?:sgcaptcha|captcha)(?:[\s/?#"'<>]|$)/i.test(body)) {
+    classification = "siteground-challenge";
+  } else if (res.headers.get("cf-mitigated") === "challenge" || /\/cdn-cgi\/challenge-platform\//i.test(body)) {
+    classification = "cloudflare-challenge";
+  } else if (/<title[^>]*>\s*(?:captcha|access denied|just a moment|security check|verify you are human)\b/i.test(body)) {
+    classification = "access-challenge-signature";
+  }
+  const details = [`classification=${classification}`, `bodyChars=${body.length}`];
+  const server = res.headers.get("server")?.toLowerCase();
+  if (server && ["nginx", "cloudflare", "apache"].includes(server)) details.push(`server=${server}`);
+  const cache = res.headers.get("x-proxy-cache")?.toUpperCase();
+  if (cache && ["HIT", "MISS", "BYPASS", "EXPIRED", "STALE"].includes(cache)) details.push(`proxyCache=${cache}`);
+  const retryAfter = res.headers.get("retry-after");
+  if (retryAfter && /^\d{1,8}$/.test(retryAfter)) details.push(`retryAfterSeconds=${Number(retryAfter)}`);
+  return details.join(", ");
+}
+
 async function fetchJson<T>(url: string, label: string, init: RequestInit = {}): Promise<T> {
   const MAX_ATTEMPTS = 3;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -53,7 +74,10 @@ async function fetchJson<T>(url: string, label: string, init: RequestInit = {}):
         try {
           return JSON.parse(body) as T;
         } catch {
-          error = new Error(`${label}: non-JSON response (HTTP ${res.status}, ${res.headers.get("content-type") ?? "unknown content type"})`);
+          const contentType = res.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase();
+          const typeLabel = contentType && ["text/html", "text/plain", "application/json"].includes(contentType)
+            ? contentType : "unknown content type";
+          error = new Error(`${label}: non-JSON response (HTTP ${res.status}, ${typeLabel}; ${nonJsonDiagnostics(res, body)})`);
         }
       }
     } catch (err) {

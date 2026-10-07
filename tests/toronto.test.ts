@@ -53,6 +53,49 @@ test("JSON error envelopes cannot become known-empty lists", async () => {
   await assert.rejects(scrapeTorontoPaper, /missing items array/);
 });
 
+test("HTML challenges remain failed snapshots and log only bounded diagnostic metadata", async () => {
+  const originalSetTimeout = globalThis.setTimeout;
+  mock.method(globalThis, "setTimeout", (callback, _delay, ...args) => originalSetTimeout(callback, 0, ...args));
+  const warnings = mock.method(console, "warn", () => {});
+  const secret = "PRIVATE_CHALLENGE_VALUE_MUST_NOT_APPEAR";
+  const fetchMock = replaceFetch(() => new Response(`<html><script>${secret}</script></html>`, {
+    status: 202,
+    headers: {
+      "content-type": "text/html; charset=utf-8", "sg-captcha": secret,
+      "set-cookie": `challenge=${secret}`, server: "nginx", "x-proxy-cache": "MISS", "retry-after": "30",
+    },
+  }));
+  await assert.rejects(scrapeTorontoPaper, (error: Error) => {
+    assert.match(error.message, /HTTP 202, text\/html; classification=siteground-challenge/);
+    assert.match(error.message, /server=nginx, proxyCache=MISS, retryAfterSeconds=30/);
+    assert.doesNotMatch(error.message, new RegExp(secret));
+    return true;
+  });
+  assert.equal(fetchMock.mock.calls.length, 3);
+  assert.equal(warnings.mock.calls.length, 2);
+  for (const call of warnings.mock.calls) assert.doesNotMatch(String(call.arguments[0]), new RegExp(secret));
+});
+
+test("unrecognized HTTP 202 HTML does not become a diagnosed challenge or an empty list", async () => {
+  const originalSetTimeout = globalThis.setTimeout;
+  mock.method(globalThis, "setTimeout", (callback, _delay, ...args) => originalSetTimeout(callback, 0, ...args));
+  mock.method(console, "warn", () => {});
+  replaceFetch(() => new Response("<html>Temporary response</html>", { status: 202, headers: { "content-type": "text/html" } }));
+  await assert.rejects(scrapeTorontoPaper, /HTTP 202, text\/html; classification=unclassified/);
+});
+
+test("a later valid JSON retry recovers from a transient HTML response", async () => {
+  const originalSetTimeout = globalThis.setTimeout;
+  mock.method(globalThis, "setTimeout", (callback, _delay, ...args) => originalSetTimeout(callback, 0, ...args));
+  mock.method(console, "warn", () => {});
+  let requests = 0;
+  replaceFetch(() => ++requests === 1
+    ? new Response("<html>Temporary response</html>", { status: 202, headers: { "content-type": "text/html" } })
+    : response({ items: [] }));
+  assert.deepEqual(await scrapeTorontoPaper(), []);
+  assert.equal(requests, 2);
+});
+
 test("AC application failure is rejected even with an empty activity array", async () => {
   replaceFetch(() => response({ ...list([]), headers: { ...list([]).headers, response_code: "1001" } }));
   await assert.rejects(scrapeTorontoComputer, /invalid response/);

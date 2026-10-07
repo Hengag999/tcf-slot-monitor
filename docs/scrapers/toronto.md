@@ -67,6 +67,16 @@ A reminder for these releases would be useful independently of cancellation-seat
 
 ## Historical incidents
 
+### 2026-10-07 — intermittent paper HTTP 202 during timer verification
+
+[Run 37572653129](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37572653129) received `HTTP 202, text/html` on all three CM paper attempts at 04:41:33–38 UTC. The second and third responses arrived roughly 20–40 ms after their retry delays. Toronto computer and the other nine source checks passed; paper state was preserved. The preceding five-minute run, [37572248671](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37572248671), passed. The same failure was also recorded by the old native schedule before the external timer, so increased frequency has not been established as its cause.
+
+At 04:43:16 UTC the exact same ordinary public CM request from the local machine returned HTTP 200 JSON with `items: []`. Response metadata included `server: nginx`, `cache-control: no-cache, private`, and `x-proxy-cache: MISS`. The official registration page and its public course loader still use category 368 on the same CM endpoint. There is no newly validated complete replacement for paper discovery.
+
+This is consistent with an intermittent edge challenge, but status and content type alone do not identify one. [SiteGround documents IP/User-Agent CAPTCHA decisions](https://www.siteground.com/kb/seeing-captcha-website), and [InfiniteWP's official support article](https://support.infinitewp.com/support/solutions/articles/264882-http-error-202-accepted-the-request-is-accepted-for-processing-but-the-processing-is-not-complete) documents SiteGround challenges returning HTTP 202. Neither establishes the cause of this specific response or a retry interval that would fix it.
+
+Non-JSON failures now log fixed challenge classifications when known signatures are present, body character count, and allowlisted server/cache/numeric Retry-After metadata. They never log the response body, cookies, challenge tokens, or arbitrary header values. Unrecognized HTML remains `classification=unclassified`. Request headers, three-attempt limit, delays, and state-preservation behavior are unchanged. This addition improves diagnosis; it is not a verified access repair. Targeted tests cover failed-snapshot preservation, bounded logging, and a later valid JSON recovery.
+
 ### 2026-06-13 — hybrid source migration
 
 E-TCF previously used CM category 367. The then-current reconnaissance found that category held an old “E-TCF – 5 modules” product with past sessions, while current “4 modules” exams lived under Active Communities category 30. Moving E-TCF discovery to AC exposed 32 then-future sittings. That count is historical, not an expected minimum.
