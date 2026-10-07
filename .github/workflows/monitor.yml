@@ -1,8 +1,7 @@
 name: TCF Slot Monitor
 on:
-  schedule:
-    # Offset from the top of the hour; scheduled Actions remain best-effort.
-    - cron: '2-57/5 * * * *'
+  # Cloudflare tcf-monitor-trigger dispatches every five minutes.
+  # Setup, verification, token renewal, and rollback: workers/tcf-monitor-trigger/README.md
   workflow_dispatch:
     inputs:
       recover_vancouver_message_id:
