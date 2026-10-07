@@ -111,5 +111,13 @@ resumed at 15-minute intervals until three consecutive fully healthy scheduled
 runs are observed; Toronto's later success is recovery evidence, not proof its
 upstream challenge has been permanently repaired.
 
+**Follow-up completion, October 7, 2026:** the 14:26, 14:31, and 14:36 China-time
+scheduled runs each passed the scoped credential guard with zero forbidden
+privileges and all 11 source checks. A read-only query confirmed all 12
+availability/reminder rows were fresh; Toronto's separate health row showed
+recovery and reset incident markers. The local Codex follow-up is now paused.
+See the [Toronto verification record](scrapers/toronto.md) for the exact run links
+and timestamps. The production timer and restricted database role remain active.
+
 References: [Neon roles](https://neon.com/docs/manage/roles),
 [PostgreSQL privileges](https://www.postgresql.org/docs/current/ddl-priv.html).

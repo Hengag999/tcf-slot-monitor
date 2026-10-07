@@ -153,6 +153,29 @@ repeated incidents, recovery/rearming, and immediate failure of other errors are
 covered by offline regression tests; the one-hour threshold has not been forced
 in production. Temporary follow-up monitoring remains active.
 
+### Temporary monitoring completed — October 7, 2026
+
+Three later consecutive scheduled runs on `8bf5fae` passed all **11 sources**, all
+**109 tests**, and the scoped credential guard with **zero forbidden privileges**:
+
+| Creation time (China time) | Run | Toronto paper |
+| --- | --- | --- |
+| 14:26:10 | [37581478902](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37581478902) | OK |
+| 14:31:39 | [37581984964](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37581984964) | OK |
+| 14:36:16 | [37582424766](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37582424766) | OK |
+
+The final read-only state check found paper `checked_at=06:36:33.701Z`, health
+`lastSuccessAt=06:36:33.718Z`, and both incident fields reset to null. The other
+11 availability/reminder rows refreshed between `06:36:33.437Z` and
+`06:36:41.073Z` (UTC). This verifies recovery and rearming after the two tolerated
+challenge runs; it does not prove SiteGround's intermittent challenge is fixed.
+
+The agreed stop condition was met. Local Codex automation
+`tcf-timer-steady-state-check` was confirmed **PAUSED at 14:37:58 China time**.
+The production Cloudflare timer and GitHub workflow remain enabled, with the
+one-hour challenge policy still active. Moving production execution off GitHub
+Actions remains a separate pending recommendation, not a completed migration.
+
 ```bash
 # Both sources, no DB writes or Discord, explicit partial-failure exit status:
 node --import tsx scripts/scrapers/toronto.ts
