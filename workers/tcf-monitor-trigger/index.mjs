@@ -35,7 +35,9 @@ export async function dispatchScheduled(controller, env, dependencies = {}) {
   try {
     response = await fetchImpl(DISPATCH_URL, {
       method: "POST",
-      redirect: "error",
+      // workerd supports manual/follow only. Reject 3xx below without forwarding
+      // the authorization header to a redirect destination.
+      redirect: "manual",
       signal: abort.signal,
       headers: {
         Authorization: `Bearer ${token}`,

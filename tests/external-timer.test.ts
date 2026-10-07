@@ -20,7 +20,7 @@ test("fresh timer dispatches only the fixed workflow with no recovery input", as
   assert.equal(requests.length, 1);
   assert.equal(requests[0].url, "https://api.github.com/repos/Hengag999/tcf-slot-monitor/actions/workflows/monitor.yml/dispatches");
   assert.equal(requests[0].init.method, "POST");
-  assert.equal(requests[0].init.redirect, "error");
+  assert.equal(requests[0].init.redirect, "manual");
   assert.equal(new Headers(requests[0].init.headers).get("X-GitHub-Api-Version"), "2026-03-10");
   assert.ok(requests[0].init.signal instanceof AbortSignal);
   assert.deepEqual(JSON.parse(String(requests[0].init.body)), { ref: "master" });
@@ -66,6 +66,22 @@ test("GitHub rejection is visible and is not retried or logged with response sec
     assert.equal(requests, 1);
     assert.deepEqual(logs, [{ event: "dispatch_rejected", scheduledTime, status }]);
     assert.ok(!JSON.stringify(logs).includes("sensitive"));
+  }
+});
+
+test("redirects never forward the token or create a second request", async () => {
+  for (const status of [301, 302, 303, 307, 308]) {
+    let requests = 0;
+    await assert.rejects(dispatchScheduled(event, env, {
+      now: () => scheduledTime,
+      fetchImpl: async (_url: string, init: RequestInit) => {
+        requests++;
+        assert.equal(init.redirect, "manual");
+        return new Response(null, { status, headers: { Location: "https://example.com/redirected" } });
+      },
+      log: () => {},
+    }), new RegExp(`HTTP ${status}`));
+    assert.equal(requests, 1);
   }
 });
 
