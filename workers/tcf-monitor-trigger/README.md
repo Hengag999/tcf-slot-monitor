@@ -34,8 +34,8 @@ The deployed token expires **January 5, 2027**. Renew it before that date. If di
 
 ## Rollback
 
-1. Remove the Worker's cron trigger to stop new external dispatches. Do not cancel an in-flight GitHub run during notification delivery.
-2. Restore the native GitHub schedule:
+1. Remove the Worker's cron trigger to stop new external dispatches. Trigger changes can take up to 15 minutes to propagate, so another external run may still arrive. Do not cancel an in-flight GitHub run during notification delivery; retain the concurrency guard.
+2. Restore the native GitHub schedule under the existing `on:` key, alongside `workflow_dispatch`:
 
    ```yaml
    schedule:
@@ -58,6 +58,14 @@ Deployment evidence is recorded here after live cutover. Local files and passing
 - First corrected scheduled invocation: **04:36:10 UTC / 12:36:10 China time**, HTTP 200 receipt `workflowRunId=37572248671`, matching [successful GitHub run](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37572248671). All 80 tests, typecheck, and all 11 live source checks passed. Worker outcome `ok`, CPU **1 ms**, wall time **1,272 ms**. This is an observed invocation, not a permanent resource-use guarantee.
 - The next dispatch at **04:41:17 UTC** was accepted and matched [run 37572653129](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37572653129), **307 seconds** after the first. That run exposed the pre-existing intermittent Toronto paper CM HTTP 202 HTML response after three attempts; the other ten sources succeeded and paper state was preserved. Safe response classification diagnostics shipped in `b32b644`; this improves diagnosis, not upstream availability. The cause of the intermittent response remains unconfirmed.
 - Subsequent runs at [04:46:22 UTC](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37573059437) and [04:51:20 UTC](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37573454805) both passed all 11 live source checks. Cloudflare HTTP 200 receipts matched both run IDs. The latter ran the updated diagnostics and passed **83 tests** plus typecheck. These two consecutive healthy runs satisfied the pre-cutover check.
-- Native `schedule:` removal is shipped with this README update. `workflow_dispatch`, recovery input, concurrency, permissions, and job configuration remain intact. Three post-cutover cycles are still being observed.
+- Native `schedule:` removal shipped in `e756b9c` at approximately **04:52 UTC / 12:52 China time**. `workflow_dispatch`, recovery input, concurrency, permissions, and job configuration remain intact. Three consecutive post-cutover cycles completed successfully:
+
+| GitHub creation time (UTC, 2026-10-07) | Run | Commit | Result |
+|---|---|---|---|
+| 04:56:10 | [37573842003](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37573842003) | `e756b9c` | Success; 83 tests, typecheck, 11/11 source checks. Worker receipt matched. |
+| 05:01:49 | [37574306012](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37574306012) | `e756b9c` | Success; 83 tests, typecheck, 11/11 source checks. Worker receipt matched. |
+| 05:06:10 | [37574662487](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37574662487) | `e756b9c` | Success; 83 tests, typecheck, 11/11 source checks. Worker receipt matched; outcome `ok`, CPU 1 ms, wall time 1,262 ms. |
+
+As of **05:07 UTC / 13:07 China time**, the corrected Worker has seven consecutive accepted scheduled dispatches, all correlated with GitHub run IDs. The latest five monitor runs are fully healthy, including the three after cutover. GitHub creation intervals ranged from **4m21s to 5m39s** (five-minute average over the observed half-hour); this replaces the previous multi-hour native-schedule gaps, without guaranteeing exact start times. No monitor runs overlapped. The temporary Codex deployment-verification follow-up is complete and can be paused. Toronto's earlier intermittent upstream response remains a documented operational risk; successful subsequent checks are not proof that the upstream behavior is permanently repaired.
 
 Official references: [Cloudflare Cron Triggers](https://developers.cloudflare.com/workers/configuration/cron-triggers/), [Worker secrets](https://developers.cloudflare.com/workers/configuration/secrets/), [Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/), [GitHub workflow dispatch API](https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event).
