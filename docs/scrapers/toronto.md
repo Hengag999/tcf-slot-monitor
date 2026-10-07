@@ -134,6 +134,25 @@ fix for the host's access challenge. A provider-approved feed or site-owner-appr
 API access would address that issue more directly; changing headers, query strings,
 or hosts merely to evade the challenge is not part of this implementation.
 
+### Alert-policy shipment verification — October 7, 2026, 14:18 China time
+
+Commit `c4f0b71` shipped the reduced challenge retries and one-hour alert policy.
+[Scheduled run 37580615700](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37580615700),
+created at 06:16:27 UTC / 14:16:27 China time, passed **109 tests**, typecheck,
+and the scoped credential guard with zero forbidden privileges. Its real Toronto
+paper request received the known challenge and reported `DEGRADED — within
+one-hour grace period; state preserved` at 10 minutes without success. The
+workflow succeeded and the other ten sources were OK.
+
+A subsequent read-only database check confirmed paper `checked_at` remained
+`2026-10-07T06:06:30.914Z`. The separate health row recorded that same last success,
+the first challenge at `06:16:46.215Z`, and no failure-issued marker. The other 11
+availability/reminder state rows refreshed during the new cycle. No credential,
+schema, or grant change was required. The exact one-hour boundary, suppression of
+repeated incidents, recovery/rearming, and immediate failure of other errors are
+covered by offline regression tests; the one-hour threshold has not been forced
+in production. Temporary follow-up monitoring remains active.
+
 ```bash
 # Both sources, no DB writes or Discord, explicit partial-failure exit status:
 node --import tsx scripts/scrapers/toronto.ts
