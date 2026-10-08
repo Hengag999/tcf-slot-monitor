@@ -82,6 +82,13 @@ when no future epoch was advertised.
 
 ## Incident log
 
+- **2026-10-08** — Twenty failed runs in the inspected 24-hour window reported
+  missing booking status. The current 30-row listing has recovered. The shared
+  parser now supports the publicly documented held-seat countdown contract and
+  adds safe structural diagnostics for unknown shapes. Historical failing HTML
+  was unavailable, so held seats remain a hypothesis for those failures. See
+  [the email investigation](../health-assessment-2026-10-08.md).
+
 - **2026-06-13** (`4c5cbd7`) — Old product-level sold-out state removed the combobox.
   Adding the specific SOLD OUT badge check repaired that historical page shape.
 - **2026-07-13** — Old product was sold out and local scrape took its empty branch.

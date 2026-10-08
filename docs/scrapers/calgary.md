@@ -42,7 +42,7 @@
   not a five-minute execution guarantee, and short openings can be missed.
 
 ## Incident log
-- **2026-10-08, 23:15 China time** — Failure emails from runs `37796571835`,
+- **2026-10-08** — Failure emails from runs `37796571835`,
   `37797314632`, and `37797948246` exposed real December registration buttons
   outside the empty `exam-registration` div. Public HTML showed Oncord
   `s8-templates-button-linkOverlay` anchors, labelled `Register now!`, inside

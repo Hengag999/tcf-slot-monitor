@@ -1,5 +1,9 @@
 # Vancouver scraper — health log
 
+Latest investigation: [October 8 failure emails](../health-assessment-2026-10-08.md).
+The shared parser supports the documented held-seat countdown and retains strict
+failure handling plus structural diagnostics for unrecognized booking markup.
+
 | | |
 |---|---|
 | **Platform** | AF "exam-selector" listing table (`alliancefrancaise.ca`) — migrated off Oncord |

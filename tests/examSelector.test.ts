@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { parseExamSelectorPage, scrapeTcfListing } from "../src/lib/examSelector";
+import { computeReminders } from "../src/lib/registrationReminders";
+import { bookableEdmontonSlots } from "../scripts/scrapers/edmonton";
 
 const URL = "https://www.alliancefrancaise.ca/en/language/exams/tcf-canada/";
 const fixture = readFileSync(new globalThis.URL("./fixtures/exam-selector-capa.html", import.meta.url), "utf8");
@@ -99,4 +101,31 @@ test("upcoming rows must carry a valid epoch", () => {
   const row = fixtureRows[2];
   assert.throws(() => parseExamSelectorPage(table([row.replace(/data-opens-at="\d+"/, 'data-opens-at="invalid"')])), /invalid registration epoch/);
   assert.throws(() => parseExamSelectorPage(table([row.replace(/data-opens-at="\d+"/, "")])), /no epoch/);
+});
+
+// Synthetic contract fixture based on the public Oncord held-card CSS and
+// countdown client inspected 2026-10-08. Historical failing HTML was not saved.
+const closedStatus = /<span class="es-status es-status-closed"[^>]*>Closed<\/span>/;
+const heldStatus = '<div class="es-held-card" data-held-expires-at="1791457200"><span class="es-held-card-chip">Spots Held</span><span class="es-held-card-countdown-value">4m 30s</span></div>';
+
+test("held seats remain tracked, unavailable and silent, even after the countdown expires", () => {
+  const heldRow = fixtureRows[0].replace(closedStatus, heldStatus);
+  const held = parseExamSelectorPage(table([heldRow])).exams[0];
+  const closed = parseExamSelectorPage(table([fixtureRows[0]])).exams[0];
+  assert.equal(held.examKey, closed.examKey);
+  assert.equal(held.statusClass, "es-status-held");
+  assert.equal(held.registrationOpensAt, null);
+  assert.equal(held.spotsLeft, 0);
+  assert.equal(held.bookingAvailable, false);
+  assert.deepEqual(bookableEdmontonSlots([held]), []);
+  const result = computeReminders([held], [], Date.UTC(2027, 0, 1));
+  assert.equal(result.tracking.length, 1);
+  assert.deepEqual(result.pings, []);
+});
+
+test("held fallback requires a labelled card with a valid expiry and no conflicting action", () => {
+  for (const markup of [heldStatus.replace('data-held-expires-at="1791457200"', ''), heldStatus.replace('1791457200', 'invalid'), heldStatus.replace('Spots Held', 'Unknown'), heldStatus + '<a href="/book">Book Now</a>', heldStatus + '<span class="es-status es-status-available">Open</span>']) {
+    assert.throws(() => parseExamSelectorPage(table([fixtureRows[0].replace(closedStatus, markup)])), /held booking status/);
+  }
+  assert.throws(() => parseExamSelectorPage(table([fixtureRows[0].replace(closedStatus, '<div data-held-expires-at="1791457200">Spots Held</div>')])), /missing booking status/);
 });

@@ -83,14 +83,33 @@ export function parseExamSelectorPage(
     if (!schedule || !location) throw new Error(`exam-selector: missing schedule/location for ${label}`);
     const spotsText = stripTags(cells[4]);
     const spotsMatch = spotsText.match(/^\d+$/);
-    const spotsLeft = /sold\s*out|full|complet/i.test(spotsText) ? 0 : spotsMatch ? Number(spotsMatch[0]) : null;
+    let spotsLeft = /sold\s*out|full|complet/i.test(spotsText) ? 0 : spotsMatch ? Number(spotsMatch[0]) : null;
 
     const bookings = cells[6];
-    const statusTag = [...bookings.matchAll(/<[a-z][^>]*>/gi)].map((match) => match[0])
+    const bookingTags = [...bookings.matchAll(/<[a-z][^>]*>/gi)].map((match) => match[0]);
+    const statusTag = bookingTags
       .find((tag) => hasClass(tag, "es-status"));
-    const statusClass = (attr(statusTag ?? "", "class") ?? "").split(/\s+/)
+    let statusClass = (attr(statusTag ?? "", "class") ?? "").split(/\s+/)
       .find((value) => value.startsWith("es-status-")) ?? "es-status-unknown";
-    if (statusClass === "es-status-unknown") throw new Error(`exam-selector: missing booking status for ${label}`);
+    // The public Oncord client documents a separate held-seat countdown card,
+    // without es-status: every seat is temporarily reserved, not bookable.
+    // Its expiry is NOT a registration opening time. Never invent availability
+    // from an expired countdown; a subsequent page must expose Book Now.
+    const heldCard = bookingTags.find((tag) => hasClass(tag, "es-held-card"));
+    if (heldCard) {
+      const expiry = attr(heldCard, "data-held-expires-at");
+      if (statusTag || bookingTags.some((tag) => /^<a\b/i.test(tag)) || !/\bspots\s+held\b/i.test(stripTags(bookings))
+        || !expiry || !/^\d+$/.test(expiry) || !Number.isSafeInteger(Number(expiry)) || Number(expiry) <= 0) {
+        throw new Error(`exam-selector: malformed or conflicting held booking status for ${label}`);
+      }
+      statusClass = "es-status-held";
+      spotsLeft = 0;
+    }
+    if (statusClass === "es-status-unknown") {
+      // Structural flags only: do not dump HTML, URLs or embedded tokens.
+      const flags = `tags=${bookingTags.length},text=${Boolean(stripTags(bookings))},heldExpiry=${bookingTags.some((tag) => attr(tag, "data-held-expires-at") !== undefined)},links=${bookingTags.filter((tag) => /^<a\b/i.test(tag)).length}`;
+      throw new Error(`exam-selector: missing booking status for ${label} (${flags})`);
+    }
     const epoch = attr(statusTag ?? "", "data-opens-at");
     if (epoch !== undefined && (!/^\d+$/.test(epoch) || !Number.isSafeInteger(Number(epoch)) || Number(epoch) <= 0)) {
       throw new Error(`exam-selector: invalid registration epoch for ${label}`);
