@@ -96,3 +96,27 @@ suppression is a separate user preference, not implemented by these parser fixes
   or a descendant. It will pause itself after recording that evidence.
 - No `.env` or `.env.local` is tracked. A scan of the changed files found zero
   credential-pattern matches. No extra production workflow was dispatched.
+
+## Temporary follow-up completed — 23:36 China time
+
+Three consecutive automatic runs on `72afd9f` or its documentation-only
+descendant passed all **11 sources**, **113 tests**, typecheck, and the scoped
+`tcf_slot_monitor` guard with **zero forbidden privileges**:
+
+| Creation time (China time) | Run | Toronto paper |
+| --- | --- | --- |
+| 23:21:19 | [37800066449](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37800066449) | OK |
+| 23:26:12 | [37800750233](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37800750233) | OK |
+| 23:31:32 | [37801475127](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37801475127) | OK |
+
+Observed start intervals were 4m53s and 5m20s. A read-only query confirmed all
+12 availability/reminder rows refreshed between `15:31:53.080Z` and
+`15:32:02.051Z`, excluding health metadata. Toronto paper's successful snapshot
+was `15:31:53.556Z`; health `lastSuccessAt` was `15:31:53.582Z`, with both
+incident markers null.
+
+The three-run stop condition was met. Automation `tcf-timer-steady-state-check`
+was confirmed **PAUSED at 23:36 China time**. The production timer continues.
+These observations establish current recovery, not a permanent upstream repair
+or proof that historical missing-status errors were held-seat cards. Broader
+repeat-email suppression and moving execution off GitHub Actions remain pending.
