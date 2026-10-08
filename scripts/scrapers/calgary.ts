@@ -54,7 +54,19 @@ export function parseCalgaryRegistration(html: string, url: string): boolean {
   for (const card of cards) {
     if (/\bsold\s*out\b/i.test(visibleText(card))) continue;
     const registrationBlocks = divsWithClass(card, "exam-registration");
-    const bookingLinks = registrationBlocks.flatMap((block) => [...block.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)]);
+    // Oncord's live December buttons are siblings of exam-registration, still
+    // inside their own exam card. Accept only that specific TCF booking control.
+    const overlayLinks = [...card.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)].filter((link) => {
+      const classes = link[1].match(/\bclass\s*=\s*(["'])(.*?)\1/i)?.[2].split(/\s+/) ?? [];
+      if (!classes.includes("s8-templates-button-linkOverlay") || !/^register now!?$/i.test(visibleText(link[2]))) return false;
+      const href = link[1].match(/\bhref\s*=\s*(["'])(.*?)\1/i)?.[2];
+      if (!href) return false;
+      try {
+        const target = new URL(href.replace(/&amp;/g, "&"), url);
+        return target.origin === new URL(url).origin && !target.username && !target.password && /^\/event-rsvp\/tcf-canada-[^/]+\/$/.test(target.pathname);
+      } catch { return false; }
+    });
+    const bookingLinks = [...registrationBlocks.flatMap((block) => [...block.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)]), ...overlayLinks];
     const hasBookingLink = bookingLinks.some((link) => {
       const href = link[1].match(/\bhref\s*=\s*(["'])(.*?)\1/i)?.[2].trim();
       if (!href || href.startsWith("#") || /(?:^|\s)(?:disabled(?:\s|=|$)|aria-disabled\s*=\s*["']true["'])/i.test(link[1])) return false;
@@ -70,8 +82,6 @@ export function parseCalgaryRegistration(html: string, url: string): boolean {
       throw new Error(`Calgary: exam card has neither SOLD OUT nor an actionable registration link at ${url}`);
     }
     openCount++;
-    // A live open example has not yet been observed; retain bounded diagnostics.
-    console.log(`[calgary:OPEN-MARKUP] ${url}\n${card.slice(0, 600)}`);
   }
   console.log(`[calgary:dest] ${url} cards=${cards.length} open=${openCount}`);
   return openCount > 0;

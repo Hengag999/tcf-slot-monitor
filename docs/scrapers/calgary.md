@@ -42,6 +42,17 @@
   not a five-minute execution guarantee, and short openings can be missed.
 
 ## Incident log
+- **2026-10-08, 23:15 China time** — Failure emails from runs `37796571835`,
+  `37797314632`, and `37797948246` exposed real December registration buttons
+  outside the empty `exam-registration` div. Public HTML showed Oncord
+  `s8-templates-button-linkOverlay` anchors, labelled `Register now!`, inside
+  their individual exam cards and pointing to same-origin `/event-rsvp/tcf-canada-*`
+  pages. Added a narrow fallback for this observed control, retaining sold-out
+  precedence and rejection of unknown, disabled, unrelated, or cross-origin links.
+  The standalone dry-run detected December availability (six cards, one still
+  open at verification; earlier HTML had three). All 111 offline tests and
+  typecheck passed. This verifies advertised availability, not checkout completion.
+  Shipment and scheduled-run evidence are recorded separately below.
 - **2026-04-30** (`6bc6c61`) — Calgary emitted a ~30-day false positive on "June
   2026 sessions" while every June date was actually SOLD OUT (the destination
   check only looked for "registration is closed" text). Added the per-date

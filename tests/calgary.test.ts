@@ -34,6 +34,23 @@ test("Calgary does not borrow registration links or sold-out text from outside a
   assert.throws(() => parseCalgaryRegistration('<div class="exam-card"><div>Incomplete', destinationUrl), /incomplete/);
 });
 
+// Public December markup observed 2026-10-08: the booking overlay is a sibling
+// of the empty exam-registration div. Decorative SVG/styles/IDs omitted.
+const overlay = (href = "/event-rsvp/tcf-canada-tue-08-12-2026/", extra = "") =>
+  `<span class="s8-templates-button"><span><strong>Register now!</strong></span><a class="s8-templates-button-linkOverlay" href="${href}" ${extra}>Register\n now!</a></span>`;
+
+test("Calgary recognizes the observed Oncord TCF booking overlay within its own card", () => {
+  assert.equal(parseCalgaryRegistration(card("SOLD OUT") + card(overlay() + registration("")), destinationUrl), true);
+  assert.equal(parseCalgaryRegistration(card("SOLD OUT" + overlay()), destinationUrl), false);
+  assert.throws(() => parseCalgaryRegistration(card(registration("")) + overlay(), destinationUrl), /neither SOLD OUT/);
+});
+
+test("Calgary overlay fallback rejects disabled, unrelated and cross-origin links", () => {
+  for (const link of [overlay("/event-rsvp/tcf-canada-tue-08-12-2026/", 'aria-disabled="true"'), overlay("https://other.example/event-rsvp/tcf-canada-tue-08-12-2026/"), overlay("/event-rsvp/tef-canada-tue-08-12-2026/"), overlay("#"), overlay("/contact/")]) {
+    assert.throws(() => parseCalgaryRegistration(card(link + registration("")), destinationUrl), /neither SOLD OUT/);
+  }
+});
+
 test("Calgary rejects unknown parent markup instead of returning an empty success", async (t) => {
   t.mock.method(globalThis, "fetch", async () => new Response("<h3>Step 2</h3>Markup changed<h3>Step 3</h3>"));
   await assert.rejects(scrapeCalgary(), /no session cards/);
