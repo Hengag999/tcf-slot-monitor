@@ -7,7 +7,7 @@
 | **Page(s)** | parent `https://www.afcalgary.ca/exams/tcf/registration-process/` → current destination `https://www.afcalgary.ca/exams/tcf/tcf-registrations-open-1607/` (follow the parent link; slugs change) |
 | **Discord** | #calgary (bot "Calgary Bot") |
 | **DB key** | city=`calgary`, exam_type=`TCF Canada` |
-| **Status** | Current public TCF dates sold out; error handling hardened locally — assessed 2026-10-06; open-state markup still unverified |
+| **Status** | Open Oncord controls observed and supported on 2026-10-08; subsequent scheduled run found all six December cards sold out. See the dated verification below. |
 
 ## How it works
 - Narrow to **Step 2** and extract balanced month card divs with the
@@ -18,13 +18,14 @@
   is not an availability signal.
 - The destination must either explicitly say registration is closed, or contain
   individual `exam-card` divs. Each card must be sold out or have a nonempty,
-  enabled HTTP(S) anchor inside its `exam-registration` block. At least one
-  such link is required to return the candidate month.
+  enabled HTTP(S) anchor inside its `exam-registration` block, or the observed
+  Oncord `Register now!` overlay within the same card linking to a same-origin
+  `/event-rsvp/tcf-canada-*` page. At least one such link is required to return
+  the candidate month.
 - HTTP/network errors, missing card shapes, incomplete markup and ambiguous
   individual cards **throw**, preserving the previous city state. They are not
   converted into a successful empty result. Both fetches have a 20-second timeout.
-- Logs `[calgary:candidate]`, `[calgary:dest]` (card/open counts), and bounded
-  `[calgary:OPEN-MARKUP]` for a positive card.
+- Logs `[calgary:candidate]` and `[calgary:dest]` (card/open counts).
 
 ## Known failure modes / gotchas
 - **Stale month button.** The month link can remain while every individual date
@@ -32,12 +33,10 @@
 - **Unrecognized destination.** Previously, a 200 response with zero exam cards
   returned open. It now throws. Failed requests also throw instead of returning
   closed; neither case should clear valid persisted state.
-- **Open-state markup is still unverified.** No live open TCF example was found
-  on 2026-10-06. The positive link rule reflects the site's published guidance,
-  but its exact open markup has only synthetic coverage. If the live opening
-  uses a different control, the scraper will raise an error for review. Even a
-  visible registration button can temporarily lag a sellout, according to the
-  site; this is not a seat reservation or checkout guarantee.
+- **Opening controls can change.** Actual TCF overlay buttons were observed on
+  2026-10-08 and added to the positive-link rule. Unrecognized controls still
+  raise an error. A visible registration button can temporarily lag a sellout,
+  according to the site; it is not a seat reservation or checkout guarantee.
 - **Sampling gap.** Assess actual GitHub run timestamps. The five-minute cron is
   not a five-minute execution guarantee, and short openings can be missed.
 
@@ -106,9 +105,8 @@ FROM slot_monitor_state WHERE city='calgary';
 curl -s "http://web.archive.org/cdx/search/cdx?url=afcalgary.ca/exams/tcf/tcf-registrations-open*&output=json&collapse=digest&from=20260101"
 # raw archived HTML: http://web.archive.org/web/<timestamp>id_/<original-url>
 ```
-- **In CI logs, search `[calgary:`**. `OPEN-MARKUP` means the positive-link
-  rule matched; inspect it to validate the first real opening. A changed or
-  ambiguous shape should be visible as an error, never interpreted as open.
+- **In CI logs, search `[calgary:`**. The destination log counts recognized cards
+  and positive booking controls. Changed or ambiguous shapes remain errors.
 
 ```bash
 node --import tsx --test tests/calgary.test.ts

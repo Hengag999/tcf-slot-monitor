@@ -74,3 +74,25 @@ All 113 tests and typecheck passed; all 127 captured current live rows still par
 No database grants, secrets, Cloudflare configuration, global email settings,
 or unrelated application infrastructure were changed. Broader repeat-email
 suppression is a separate user preference, not implemented by these parser fixes.
+
+## Deployment verification — 23:22 China time
+
+- `baa9240` shipped the Calgary repair. Automatic
+  [run 37799351131](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37799351131)
+  at 15:16 UTC passed all ten other sources and the scoped permission guard;
+  Toronto paper was explicitly degraded within its five-minute challenge grace.
+  Calgary's six cards were all sold out by this run. No notification was due;
+  the earlier opening was not recovered as a late ping.
+- `72afd9f` shipped held-state support and diagnostics. Automatic
+  [run 37800066449](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37800066449)
+  at 15:21 UTC passed **113 tests, typecheck, all 11 sources**, and the scoped
+  guard with **zero forbidden privileges**.
+- A subsequent read-only check confirmed all 12 availability/reminder rows
+  refreshed between 15:21:38 and 15:21:50 UTC, with Toronto incident markers
+  reset and Calgary at a valid empty snapshot. This proves current health;
+  it does not prove the historical unknown markup was a held card.
+- The temporary `tcf-timer-steady-state-check` follow-up was resumed with a
+  stop condition of three consecutive qualifying automatic runs on `72afd9f`
+  or a descendant. It will pause itself after recording that evidence.
+- No `.env` or `.env.local` is tracked. A scan of the changed files found zero
+  credential-pattern matches. No extra production workflow was dispatched.
