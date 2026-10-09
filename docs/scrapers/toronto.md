@@ -2,17 +2,18 @@
 
 | | |
 |---|---|
-| **Platform** | E-TCF: Active Communities `activities/list` category 30. P-TCF: Alliance Française CM `/groupcourses` category 368. Both confirm candidates against the AC detail API. |
+| **Platform** | Alliance Française CM `/groupcourses`: category 367 for E-TCF and 368 for P-TCF, matching the official registration page. Both confirm concrete child activities against the AC detail API. |
 | **Diff strategy** | 0 → N per exam type. Computer and paper have separate scrape outcomes, sharing Toronto's existing DB city key and Discord destination. |
 | **Page** | [Official registration page](https://www.alliance-francaise.ca/en/exams/tests/informations-about-tcf-canada/tcf-canada) |
 | **Discord** | #toronto |
 | **DB keys** | city=`toronto`, exam_type=`E-TCF Canada` and `P-TCF Canada` |
-| **Status** | **Locally repaired, 2026-10-06:** both computer and paper sources complete with zero bookable slots. Old fixed Chrome/124 User-Agent caused reproducible CM 403; the honest monitor User-Agent receives JSON. GitHub runner behavior must be verified after deployment. |
+| **Status** | **Computer false positive confirmed and locally repaired 2026-10-09:** AC search exposed an October 16 parent aggregate with one opening, but its browser page had no sub-activities or enrollment action. The repaired official CM child discovery returns zero bookable computer and paper exams in a live standalone check. Production deployment and state correction are pending. The known intermittent paper challenge policy is unchanged. |
 
 ## Current behavior
 
-- `scrapeTorontoComputer()` reads all AC category 30 pages and selects explicit E-TCF products. Category 30 is shared by both formats: explicit P-TCF rows are ignored by this source, and unfamiliar product names fail visibly. It skips explicitly closed list rows, then confirms remaining candidates against `body.detail.space_status`, with at most five simultaneous detail requests. Dates prefer detail `first_date`, falling back to the validated `TCFC<DDMMYY>` activity number.
-- `scrapeTorontoPaper()` reads the CM category 368 list and confirms every candidate through AC detail. Its query now matches the public site's 300-row limit. Reaching the limit is reported as incomplete coverage instead of silently accepting a potentially truncated list.
+- `scrapeTorontoComputer()` reads the official CM category 367 list. AC category 30 search is no longer a discovery source: it exposed parent aggregates that were not bookable and omitted real child activities advertised by the official site.
+- `scrapeTorontoPaper()` independently reads CM category 368. Both queries match the public site's filters and 300-row limit. The response must explicitly report page 1, the requested limit, and a total equal to the returned count, below 300. Missing/invalid metadata, duplicate IDs, wrong categories/formats, and records contradicting the requested status/open-space filters fail instead of becoming an empty snapshot.
+- Every candidate must have a matching AC detail ID, explicit `is_parent_activity=false`, and readable `space_status`. A parent aggregate is unknown bookability even if it advertises an opening, so it fails the source rather than producing a false alert. At most five detail requests run concurrently. Dates prefer the detail's `first_date`, falling back to the validated CM sitting date. Reported seat counts come from the confirmed AC detail, not potentially stale CM counts.
 - The orchestrator calls these independently and restricts each snapshot to its own exam type. A failed paper source must preserve its previous row and must not prevent computer monitoring. Returning an unscoped partial Toronto array would be unsafe: missing exam types would otherwise be cleared by the orchestrator.
 - The retained `scrapeToronto()` aggregate rejects if either source fails. The standalone script uses both independent sources, prints each outcome and surviving results, and exits nonzero if coverage is incomplete.
 - Requests have a 20-second timeout and at most three attempts. Network failures, HTTP 429/5xx, and non-JSON responses are retried. Other HTTP errors such as 403 fail immediately. Requests identify themselves as `TCF-Slot-Monitor/1.0 (+https://github.com/Hengag999/tcf-slot-monitor)`; no cookies, clearance tokens, or browser runtime are required for the verified local result.
@@ -20,7 +21,7 @@
   it stops after one request and lets the next scheduled run try again. Earlier
   blocked runs repeated the same challenge on both immediate retries. This cuts
   those unsuccessful requests; it does not establish a permanent access repair.
-- Missing list arrays, unsuccessful AC response envelopes, malformed rows, truncated/duplicate pagination, failed detail calls, missing detail status, and unknown status text are **unknown availability**, not a known-empty result. They fail that exam type so persistence can retain its previous state.
+- Missing list arrays, unsuccessful AC response envelopes, malformed rows, truncated/duplicate discovery, failed detail calls, missing detail status/parent metadata, and unknown status text are **unknown availability**, not a known-empty result. They fail that exam type so persistence can retain its previous state.
 - Explicit closed statuses include full, on hold, closed, cancelled, waitlist, sold out, and not open. Positive detail handling accepts numeric openings/spaces/spots/seats, `Open`, `Available`, and `Unlimited openings`. New wording fails visibly rather than assuming a vacancy. `Unlimited openings` was observed on public non-exam AC activities in this assessment; an actual open E-TCF sitting was not available for end-to-end confirmation.
 
 ## Entry-point reconnaissance — 2026-10-06
@@ -193,3 +194,68 @@ Read DB freshness per exam type, not only per city. A fresh E-TCF row does not e
 ## Shipment verification — 2026-10-06 21:18 China time
 
 The repairs are deployed on `master`. [GitHub run 37469738669](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37469738669) passed all source checks and refreshed stored state. See `docs/health-assessment-2026-10-06.md` for the first-run Discord timeout, verified message reconciliation, and final production evidence. Earlier local-only/pending-deployment statements above describe the pre-shipment assessment.
+
+## Independent coverage audit — 2026-10-09
+
+The official TCF registration page and its public course loader were re-read rather
+than relying on the current scraper endpoint. The page still uses CM categories
+**367 for E-TCF** and **368 for P-TCF**, with no campus restriction and the same
+300-row, future/open-space/status filters. The page also still publishes the 2027
+quarterly release schedule described above.
+
+A bounded standalone check, with no database writes or Discord sends, observed:
+
+- **Computer:** AC category 30 reported one complete page with **five E-TCF rows**.
+  Four were explicitly Full or On Hold. Activity **129464**, October 16, had an
+  Enroll Now action in its public list response and detail status **1 opening
+  remaining**. The scraper returned that same activity and one seat. Its detail
+  marks it as a parent activity; API space count alone does not establish that a
+  registration can be completed. Browser inspection of the public booking flow is
+  recorded separately when available.
+- **Independent computer comparison:** the official CM category 367 result listed
+  two October 23 child activities, **129585** and **129702**, each advertising one
+  open space. Both independent AC details reported **Full**, so neither was a
+  confirmed vacancy. This disagreement is concrete evidence against trusting CM
+  `open_spaces` alone. These IDs were absent from AC search; no missed bookable
+  activity was established by this comparison, and complete future agreement
+  between the two catalogues must not be assumed.
+- **Paper:** the actual filtered request returned **HTTP 200 JSON, zero items**.
+  The unfiltered category contained 44 records, including four future activities
+  (**129194, 129197, 129199, 129201**) on October 23 and November 13. Each had zero
+  CM open spaces and an independent AC detail status of **On Hold**. This supports
+  the current known-empty result. It does not prove that paper access is permanently
+  repaired or that an empty AC search can replace CM discovery.
+
+No challenge-solving, private account access, bookings, credentials, or production
+state changes were used. This is a dated successful source observation. The existing
+paper challenge alert policy remains unchanged, and unknown failures still preserve
+the previous snapshot and fail immediately.
+
+### Parent-activity false positive and repair — October 9
+
+The browser cross-check resolved the limitation above: opening the purported
+October 16 booking URL for parent **129464** redirected to the public activity
+search. Its matching E-TCF card said **No sub-activities** and offered no enrollment
+action. The API's one remaining opening was therefore not a usable booking option.
+This was a confirmed false positive, despite successful scraper execution and a
+positive `space_status`. It does not establish how long the parent lacked children.
+
+Computer discovery now uses the official CM **367** feed and validates its actual
+child activities through AC detail. The public CM response's two positive-space
+children were both **Full** in AC. A live standalone check after the repair accepted
+the real CM metadata and returned **0 computer / 0 paper bookable slots**, with no
+database or Discord writes. A successful ordinary production run can consequently
+clear the stale parent snapshot; failed discovery or detail must preserve it.
+
+The new computer dependency is the same CM host already used by paper. If computer
+CM access fails or receives a challenge, that source fails immediately under the
+existing policy. The one-hour grace and one-failure-per-outage rule remains scoped
+only to the recognized paper category-368 challenge; it was not broadened here.
+
+Validation: all **24 Toronto tests** passed, including the sanitized real CM/AC
+fixture, the actual orchestrator configuration, parent rejection, valid child
+availability, incomplete/malformed response rejection, source isolation, and
+preserving the prior computer snapshot on request failure. The complete TypeScript
+check passed. The fixture contains only public exam fields and no student records,
+credentials, or headers. An actual newly bookable child and notification delivery
+remain to be observed; a mocked positive case is not production delivery evidence.

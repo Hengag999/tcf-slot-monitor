@@ -11,47 +11,51 @@ failure handling plus structural diagnostics for unrecognized booking markup.
 | **Page(s)** | `https://www.alliancefrancaise.ca/en/language/exams/tcf-canada/` |
 | **Discord** | #vancouver (bot "Vancouver Bot") |
 | **DB key** | city=`vancouver`, exam_type=`TCF Canada` (the `slots` JSONB holds reminder tracking, not slots) |
-| **Status** | Local repair verified 2026-10-06; production still uses first-page-only parser until deployment |
+| **Status** | **Coverage rechecked 2026-10-09:** the deployed parser covers all 106 current rows across three pages. Independent HTML parsing matched every label, schedule, and location. No reminder is currently due against the read-only production tracking snapshot. |
 
 ## How it works
 - `scrapeVancouver()` returns **every exam row** on the TCF-Canada listing table
-  whose Location column is **not Victoria's** (the same platform hosts AF Victoria —
-  see `docs/scrapers/victoria.md`; parsing is shared in `src/lib/examSelector.ts`),
-  not "bookable slots". Columns: Exam · Schedules · Registration
+  whose Location column is **not Victoria's**. The current official table contains
+  Vancouver and New Westminster. Victoria has its **own** calendar at
+  `afvictoria.ca/language/exams/tcf/`; it does not share this listing. Only the parser
+  implementation is shared (see `docs/scrapers/victoria.md`). This source returns
+  listed exams, not "bookable slots". Columns: Exam · Schedules · Registration
   Dates · Location · Spots left · Price · Bookings.
 - The **Bookings cell** carries the machine-readable state:
   `<span class="es-status es-status-… " data-opens-at="<unix epoch>">`. The epoch is
   the exact registration-open time (no Pacific-timezone parsing needed); the
   `es-status-*` class is captured for diagnostics.
 - The reminder engine (`src/lib/registrationReminders.ts`, `computeReminders`) decides
-  pings: a one-off **new-session** ping the first time a row appears, then **3d / 2d /
-  1d** reminders before `registrationOpensAt`. Sub-day reminders are intentionally
-  omitted (the GH Actions cron can't hit them). Only the **most recent passed
+  pings: a one-off **new-session** ping when a row first becomes actionable, then
+  **3d / 2d / 1d** reminders before `registrationOpensAt`. Closed/full rows are silently
+  tracked. Sub-day reminders remain intentionally omitted. Only the **most recent passed
   threshold** fires per run; earlier missed ones are marked done, never back-fired.
 - **State** persists in the existing `slot_monitor_state` row (the `slots` JSONB holds
   `[{examKey, label, registrationOpensAt, firedReminders[]}]`). **No schema migration.**
 
 ## Why a reminder model (not availability detection)
-TCF Vancouver spots vanish within seconds of registration opening, and GitHub Actions
-cron is coarse and unreliable (we've seen ~3.5h gaps vs the nominal 5 min). Catching
-the instant of availability is hopeless, but the new platform *advertises the
-registration-open time in advance* — so we ping people to be ready instead. This
-fully replaces the old 0→N availability ping for Vancouver.
+The official platform advertises registration opening times in advance. The
+service therefore sends preparation reminders instead of relying on a periodic
+check to catch short availability windows. Earlier native GitHub cron gaps helped
+motivate this design. The external timer now normally dispatches every five minutes;
+that does not guarantee a seat can be detected or reserved. This reminder strategy
+replaces the old 0→N availability ping for Vancouver.
 
 ## Known failure modes / gotchas
 - **Platform migration broke the old scraper** (2026-06): the old Oncord URL
   `/products/ciep-tcf-canada-full-exam/` now **301s to a dead `…-classic` slug**
   ("Product Not Found"), so the old combobox scraper threw every run. The live product
   is the exam-selector; the listing table is the durable source.
-- **Observed `es-status-*` states so far** (2026-07-07): `es-status-opens-soon`
+- **Historical status observation** (2026-07-07): `es-status-opens-soon`
   (pre-open, carries `data-opens-at`), `es-status-full`, `es-status-closed`. Rows in
   full/closed state carry **no `data-opens-at`** → `registrationOpensAt: null`. A row
-  first sighted in that state gets a new-session ping showing the human registration
-  window (fixed 2026-07-07; previously said "时间待定"). The truly-OPEN markup is still
-  unobserved — the reminder model doesn't depend on it. The `bookingUrl` falls back to
+  first sighted in that state was formerly announced; the October 6 repair superseded
+  that behavior and now baselines closed/full rows silently. The parser also supports
+  a positive available booking link and the separately validated held-seat shape;
+  do not infer a live vacancy from a countdown alone. The `bookingUrl` falls back to
   the listing page when the Bookings cell has no link.
-- **Sub-day reminders are deliberately absent** — don't "fix" their absence; the cron
-  can't deliver them reliably.
+- **Sub-day reminders are deliberately absent** — the five-minute timer does not
+  change the agreed reminder policy.
 - **No separate open-now threshold** by design (decided 2026-06-13). Easy to re-add in
   `computeReminders` (`THRESHOLDS` + a kind for lead 0) if wanted.
 
@@ -112,3 +116,32 @@ These changes are locally tested. No repaired production run or new Discord deli
 ## Shipment verification — 2026-10-06 21:18 China time
 
 The repairs are deployed on `master`. [GitHub run 37469738669](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37469738669) passed all source checks and refreshed stored state. See `docs/health-assessment-2026-10-06.md` for the first-run Discord timeout, verified message reconciliation, and final production evidence. Earlier local-only/pending-deployment statements above describe the pre-shipment assessment.
+
+## Independent coverage audit — 2026-10-09
+
+The dedicated official TCF registration page was independently located and checked
+against the deployed source. Its location text explicitly names Vancouver at
+6161 Cambie Street and New Westminster at 320 Columbia Street. Victoria's distinct
+calendar is not evidence that either of these locations has moved.
+
+A bounded public scrape followed the real Show More links through **15 + 60 + 31 =
+106 rows**. A second parser using Python's standard HTML parser, independent of
+`parseExamSelectorPage`, compared the multiset of `(label, schedule, location)` from
+all three raw tables against the scraper result. Every row matched, with no missing
+or extra rows. The current inventory contains:
+
+- **55 New Westminster** and **51 Vancouver** sittings.
+- **56 closed** rows, which produce no new-session reminders.
+- **50 future registration** rows, all carrying epoch `1793660400`:
+  **November 2, 2026 at 15:00 Pacific**, or **November 3 at 07:00 China time**.
+
+A pure, offline `computeReminders` call against the main audit's read-only production
+snapshot returned **zero due pings** and 106 tracking records at 03:58 UTC. The same
+calculation at the next 72-hour threshold, **October 30 at 23:00 UTC**, produces 50
+three-day reminders. This checks the decision logic without changing production
+state or sending a message. It is not proof of future delivery.
+
+No current Vancouver coverage defect or pending notification was found. The October
+6 pagination repair is essential: inspecting only the first page would again miss
+most of the calendar. This audit does not establish that every historical opening
+was observed, nor does it make registration success a service guarantee.

@@ -1,0 +1,444 @@
+[
+  {
+    "IDETABLISHMENT_BRANCH": 1,
+    "IDEXAMINATION_TYPE": 16,
+    "name": "TCF Canada",
+    "examinations": [
+      {
+        "IDEXAMINATION": 1059,
+        "IDETABLISHMENT_BRANCH": 1,
+        "IDEXAMINATION_TYPE": 16,
+        "product_name": "TCF Canada",
+        "examination_date": "2026-10-14",
+        "start_time": "12:30:00",
+        "end_time": "16:30:00",
+        "isFull": false,
+        "inscriptionIsInFuture": false,
+        "mainRegisterLink": {
+          "link": "https://afhalifax.ca/user/cart/#/addExamination/1059",
+          "label": "add_to_cart"
+        }
+      },
+      {
+        "IDEXAMINATION": 1176,
+        "IDETABLISHMENT_BRANCH": 1,
+        "IDEXAMINATION_TYPE": 16,
+        "product_name": "TCF Canada",
+        "examination_date": "2026-10-15",
+        "start_time": "09:00:00",
+        "end_time": "12:30:00",
+        "isFull": false,
+        "inscriptionIsInFuture": false,
+        "mainRegisterLink": {
+          "link": "https://afhalifax.ca/user/cart/#/addExamination/1176",
+          "label": "add_to_cart"
+        }
+      },
+      {
+        "IDEXAMINATION": 1060,
+        "IDETABLISHMENT_BRANCH": 1,
+        "IDEXAMINATION_TYPE": 16,
+        "product_name": "TCF Canada",
+        "examination_date": "2026-10-19",
+        "start_time": "12:45:00",
+        "end_time": "16:30:00",
+        "isFull": true,
+        "inscriptionIsInFuture": false,
+        "mainRegisterLink": {
+          "link": "",
+          "label": "examination_sold_out"
+        }
+      },
+      {
+        "IDEXAMINATION": 1063,
+        "IDETABLISHMENT_BRANCH": 1,
+        "IDEXAMINATION_TYPE": 16,
+        "product_name": "TCF Canada",
+        "examination_date": "2026-10-20",
+        "start_time": "12:30:00",
+        "end_time": "16:30:00",
+        "isFull": true,
+        "inscriptionIsInFuture": false,
+        "mainRegisterLink": {
+          "link": "",
+          "label": "examination_sold_out"
+        }
+      },
+      {
+        "IDEXAMINATION": 1065,
+        "IDETABLISHMENT_BRANCH": 1,
+        "IDEXAMINATION_TYPE": 16,
+        "product_name": "TCF Canada",
+        "examination_date": "2026-10-21",
+        "start_time": "09:00:00",
+        "end_time": "12:30:00",
+        "isFull": true,
+        "inscriptionIsInFuture": false,
+        "mainRegisterLink": {
+          "link": "",
+          "label": "examination_sold_out"
+        }
+      },
+      {
+        "IDEXAMINATION": 1111,
+        "IDETABLISHMENT_BRANCH": 1,
+        "IDEXAMINATION_TYPE": 16,
+        "product_name": "TCF Canada",
+        "examination_date": "2026-11-03",
+        "start_time": "12:30:00",
+        "end_time": "16:30:00",
+        "isFull": true,
+        "inscriptionIsInFuture": false,
+        "mainRegisterLink": {
+          "link": "",
+          "label": "examination_sold_out"
+        }
+      },
+      {
+        "IDEXAMINATION": 1145,
+        "IDETABLISHMENT_BRANCH": 1,
+        "IDEXAMINATION_TYPE": 16,
+        "product_name": "TCF Canada",
+        "examination_date": "2026-11-06",
+        "start_time": "09:00:00",
+        "end_time": "12:30:00",
+        "isFull": true,
+        "inscriptionIsInFuture": false,
+        "mainRegisterLink": {
+          "link": "",
+          "label": "examination_sold_out"
+        }
+      },
+      {
+        "IDEXAMINATION": 1142,
+        "IDETABLISHMENT_BRANCH": 1,
+        "IDEXAMINATION_TYPE": 16,
+        "product_name": "TCF Canada",
+        "examination_date": "2026-11-20",
+        "start_time": "12:30:00",
+        "end_time": "16:30:00",
+        "isFull": true,
+        "inscriptionIsInFuture": false,
+        "mainRegisterLink": {
+          "link": "",
+          "label": "examination_sold_out"
+        }
+      },
+      {
+        "IDEXAMINATION": 1144,
+        "IDETABLISHMENT_BRANCH": 1,
+        "IDEXAMINATION_TYPE": 16,
+        "product_name": "TCF Canada",
+        "examination_date": "2026-11-20",
+        "start_time": "09:00:00",
+        "end_time": "12:30:00",
+        "isFull": true,
+        "inscriptionIsInFuture": false,
+        "mainRegisterLink": {
+          "link": "",
+          "label": "examination_sold_out"
+        }
+      },
+      {
+        "IDEXAMINATION": 1147,
+        "IDETABLISHMENT_BRANCH": 1,
+        "IDEXAMINATION_TYPE": 16,
+        "product_name": "TCF Canada",
+        "examination_date": "2026-12-01",
+        "start_time": "09:00:00",
+        "end_time": "12:30:00",
+        "isFull": true,
+        "inscriptionIsInFuture": false,
+        "mainRegisterLink": {
+          "link": "",
+          "label": "examination_sold_out"
+        }
+      },
+      {
+        "IDEXAMINATION": 1148,
+        "IDETABLISHMENT_BRANCH": 1,
+        "IDEXAMINATION_TYPE": 16,
+        "product_name": "TCF Canada",
+        "examination_date": "2026-12-01",
+        "start_time": "12:30:00",
+        "end_time": "16:30:00",
+        "isFull": true,
+        "inscriptionIsInFuture": false,
+        "mainRegisterLink": {
+          "link": "",
+          "label": "examination_sold_out"
+        }
+      },
+      {
+        "IDEXAMINATION": 1149,
+        "IDETABLISHMENT_BRANCH": 1,
+        "IDEXAMINATION_TYPE": 16,
+        "product_name": "TCF Canada",
+        "examination_date": "2026-12-02",
+        "start_time": "12:30:00",
+        "end_time": "16:30:00",
+        "isFull": false,
+        "inscriptionIsInFuture": false,
+        "mainRegisterLink": {
+          "link": "https://afhalifax.ca/user/cart/#/addExamination/1149",
+          "label": "add_to_cart"
+        }
+      },
+      {
+        "IDEXAMINATION": 1150,
+        "IDETABLISHMENT_BRANCH": 1,
+        "IDEXAMINATION_TYPE": 16,
+        "product_name": "TCF Canada",
+        "examination_date": "2026-12-02",
+        "start_time": "09:00:00",
+        "end_time": "12:30:00",
+        "isFull": false,
+        "inscriptionIsInFuture": false,
+        "mainRegisterLink": {
+          "link": "https://afhalifax.ca/user/cart/#/addExamination/1150",
+          "label": "add_to_cart"
+        }
+      },
+      {
+        "IDEXAMINATION": 1163,
+        "IDETABLISHMENT_BRANCH": 1,
+        "IDEXAMINATION_TYPE": 16,
+        "product_name": "TCF Canada",
+        "examination_date": "2026-12-04",
+        "start_time": "09:00:00",
+        "end_time": "12:30:00",
+        "isFull": false,
+        "inscriptionIsInFuture": false,
+        "mainRegisterLink": {
+          "link": "https://afhalifax.ca/user/cart/#/addExamination/1163",
+          "label": "add_to_cart"
+        }
+      },
+      {
+        "IDEXAMINATION": 1164,
+        "IDETABLISHMENT_BRANCH": 1,
+        "IDEXAMINATION_TYPE": 16,
+        "product_name": "TCF Canada",
+        "examination_date": "2026-12-04",
+        "start_time": "12:30:00",
+        "end_time": "16:30:00",
+        "isFull": false,
+        "inscriptionIsInFuture": false,
+        "mainRegisterLink": {
+          "link": "https://afhalifax.ca/user/cart/#/addExamination/1164",
+          "label": "add_to_cart"
+        }
+      },
+      {
+        "IDEXAMINATION": 1151,
+        "IDETABLISHMENT_BRANCH": 1,
+        "IDEXAMINATION_TYPE": 16,
+        "product_name": "TCF Canada",
+        "examination_date": "2026-12-07",
+        "start_time": "09:00:00",
+        "end_time": "12:30:00",
+        "isFull": false,
+        "inscriptionIsInFuture": false,
+        "mainRegisterLink": {
+          "link": "https://afhalifax.ca/user/cart/#/addExamination/1151",
+          "label": "add_to_cart"
+        }
+      },
+      {
+        "IDEXAMINATION": 1152,
+        "IDETABLISHMENT_BRANCH": 1,
+        "IDEXAMINATION_TYPE": 16,
+        "product_name": "TCF Canada",
+        "examination_date": "2026-12-07",
+        "start_time": "12:45:00",
+        "end_time": "16:30:00",
+        "isFull": false,
+        "inscriptionIsInFuture": false,
+        "mainRegisterLink": {
+          "link": "https://afhalifax.ca/user/cart/#/addExamination/1152",
+          "label": "add_to_cart"
+        }
+      },
+      {
+        "IDEXAMINATION": 1153,
+        "IDETABLISHMENT_BRANCH": 1,
+        "IDEXAMINATION_TYPE": 16,
+        "product_name": "TCF Canada",
+        "examination_date": "2026-12-08",
+        "start_time": "12:30:00",
+        "end_time": "16:30:00",
+        "isFull": false,
+        "inscriptionIsInFuture": false,
+        "mainRegisterLink": {
+          "link": "https://afhalifax.ca/user/cart/#/addExamination/1153",
+          "label": "add_to_cart"
+        }
+      },
+      {
+        "IDEXAMINATION": 1154,
+        "IDETABLISHMENT_BRANCH": 1,
+        "IDEXAMINATION_TYPE": 16,
+        "product_name": "TCF Canada",
+        "examination_date": "2026-12-08",
+        "start_time": "09:00:00",
+        "end_time": "12:30:00",
+        "isFull": false,
+        "inscriptionIsInFuture": false,
+        "mainRegisterLink": {
+          "link": "https://afhalifax.ca/user/cart/#/addExamination/1154",
+          "label": "add_to_cart"
+        }
+      },
+      {
+        "IDEXAMINATION": 1155,
+        "IDETABLISHMENT_BRANCH": 1,
+        "IDEXAMINATION_TYPE": 16,
+        "product_name": "TCF Canada",
+        "examination_date": "2026-12-09",
+        "start_time": "09:00:00",
+        "end_time": "12:30:00",
+        "isFull": false,
+        "inscriptionIsInFuture": false,
+        "mainRegisterLink": {
+          "link": "https://afhalifax.ca/user/cart/#/addExamination/1155",
+          "label": "add_to_cart"
+        }
+      },
+      {
+        "IDEXAMINATION": 1156,
+        "IDETABLISHMENT_BRANCH": 1,
+        "IDEXAMINATION_TYPE": 16,
+        "product_name": "TCF Canada",
+        "examination_date": "2026-12-09",
+        "start_time": "12:30:00",
+        "end_time": "16:30:00",
+        "isFull": false,
+        "inscriptionIsInFuture": false,
+        "mainRegisterLink": {
+          "link": "https://afhalifax.ca/user/cart/#/addExamination/1156",
+          "label": "add_to_cart"
+        }
+      },
+      {
+        "IDEXAMINATION": 1157,
+        "IDETABLISHMENT_BRANCH": 1,
+        "IDEXAMINATION_TYPE": 16,
+        "product_name": "TCF Canada",
+        "examination_date": "2026-12-14",
+        "start_time": "12:45:00",
+        "end_time": "16:30:00",
+        "isFull": false,
+        "inscriptionIsInFuture": false,
+        "mainRegisterLink": {
+          "link": "https://afhalifax.ca/user/cart/#/addExamination/1157",
+          "label": "add_to_cart"
+        }
+      },
+      {
+        "IDEXAMINATION": 1158,
+        "IDETABLISHMENT_BRANCH": 1,
+        "IDEXAMINATION_TYPE": 16,
+        "product_name": "TCF Canada",
+        "examination_date": "2026-12-14",
+        "start_time": "09:00:00",
+        "end_time": "12:30:00",
+        "isFull": false,
+        "inscriptionIsInFuture": false,
+        "mainRegisterLink": {
+          "link": "https://afhalifax.ca/user/cart/#/addExamination/1158",
+          "label": "add_to_cart"
+        }
+      },
+      {
+        "IDEXAMINATION": 1159,
+        "IDETABLISHMENT_BRANCH": 1,
+        "IDEXAMINATION_TYPE": 16,
+        "product_name": "TCF Canada",
+        "examination_date": "2026-12-15",
+        "start_time": "09:00:00",
+        "end_time": "12:30:00",
+        "isFull": false,
+        "inscriptionIsInFuture": false,
+        "mainRegisterLink": {
+          "link": "https://afhalifax.ca/user/cart/#/addExamination/1159",
+          "label": "add_to_cart"
+        }
+      },
+      {
+        "IDEXAMINATION": 1160,
+        "IDETABLISHMENT_BRANCH": 1,
+        "IDEXAMINATION_TYPE": 16,
+        "product_name": "TCF Canada",
+        "examination_date": "2026-12-15",
+        "start_time": "12:30:00",
+        "end_time": "16:30:00",
+        "isFull": false,
+        "inscriptionIsInFuture": false,
+        "mainRegisterLink": {
+          "link": "https://afhalifax.ca/user/cart/#/addExamination/1160",
+          "label": "add_to_cart"
+        }
+      },
+      {
+        "IDEXAMINATION": 1161,
+        "IDETABLISHMENT_BRANCH": 1,
+        "IDEXAMINATION_TYPE": 16,
+        "product_name": "TCF Canada",
+        "examination_date": "2026-12-16",
+        "start_time": "12:30:00",
+        "end_time": "16:30:00",
+        "isFull": false,
+        "inscriptionIsInFuture": false,
+        "mainRegisterLink": {
+          "link": "https://afhalifax.ca/user/cart/#/addExamination/1161",
+          "label": "add_to_cart"
+        }
+      },
+      {
+        "IDEXAMINATION": 1162,
+        "IDETABLISHMENT_BRANCH": 1,
+        "IDEXAMINATION_TYPE": 16,
+        "product_name": "TCF Canada",
+        "examination_date": "2026-12-16",
+        "start_time": "09:00:00",
+        "end_time": "12:30:00",
+        "isFull": true,
+        "inscriptionIsInFuture": false,
+        "mainRegisterLink": {
+          "link": "",
+          "label": "examination_sold_out"
+        }
+      },
+      {
+        "IDEXAMINATION": 1165,
+        "IDETABLISHMENT_BRANCH": 1,
+        "IDEXAMINATION_TYPE": 16,
+        "product_name": "TCF Canada",
+        "examination_date": "2026-12-18",
+        "start_time": "12:30:00",
+        "end_time": "16:30:00",
+        "isFull": true,
+        "inscriptionIsInFuture": false,
+        "mainRegisterLink": {
+          "link": "",
+          "label": "examination_sold_out"
+        }
+      },
+      {
+        "IDEXAMINATION": 1166,
+        "IDETABLISHMENT_BRANCH": 1,
+        "IDEXAMINATION_TYPE": 16,
+        "product_name": "TCF Canada",
+        "examination_date": "2026-12-18",
+        "start_time": "09:00:00",
+        "end_time": "12:30:00",
+        "isFull": true,
+        "inscriptionIsInFuture": false,
+        "mainRegisterLink": {
+          "link": "",
+          "label": "examination_sold_out"
+        }
+      }
+    ]
+  }
+]

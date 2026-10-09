@@ -97,6 +97,60 @@ test("valid empty table is distinct from a missing or incomplete structure", () 
   assert.throws(() => parseExamSelectorPage(table([fixtureRows[0].replace("es-status-closed", "missing-status")])), /booking status/);
 });
 
+test("ordinary header rows and a header-only empty table remain valid", () => {
+  // Column labels and th-only shape observed on the live Victoria listing.
+  const header = '<tr><th>Exam</th><th>Schedules</th><th><a href="?order=date">Registration Dates</a></th><th>Location</th><th>Spots left</th><th>Price</th><th>Bookings</th></tr>';
+  assert.deepEqual(parseExamSelectorPage(table([header])).exams, []);
+  assert.equal(parseExamSelectorPage(table([header, fixtureRows[0]])).exams.length, 1);
+});
+
+test("missing or renamed data-row classes cannot silently yield an empty or partial snapshot", () => {
+  for (const renamed of [fixtureRows[0].replace('class="tableRow"', 'class="examRowV2"'), fixtureRows[0].replace('class="tableRow"', '')]) {
+    assert.throws(() => parseExamSelectorPage(table([renamed])), /unrecognized data row/);
+    assert.throws(() => parseExamSelectorPage(table([fixtureRows[1], renamed])), /unrecognized data row/);
+  }
+});
+
+test("incomplete unknown rows and malformed recognized cells reject the snapshot", () => {
+  const unknown = fixtureRows[0].replace('class="tableRow"', 'class="examRowV2"').replace('</tr>', '');
+  assert.throws(() => parseExamSelectorPage(table([unknown])), /incomplete exam row/);
+  // Seven regex matches alone used to miss an extra unclosed cell marker.
+  const malformed = fixtureRows[0].replace('<td>', '<td><td>');
+  assert.throws(() => parseExamSelectorPage(table([malformed])), /7 exam columns/);
+  const extraHeaderCell = fixtureRows[0].replace('</tr>', '<th>Unexpected</th></tr>');
+  assert.throws(() => parseExamSelectorPage(table([extraHeaderCell])), /7 exam columns/);
+});
+
+test("unrecognized booking states fail instead of silently tracking unavailable exams", () => {
+  // The prior prefix-only parser accepted these as healthy rows with no pings.
+  // In particular, a held state is valid only through the validated held card,
+  // not merely because an arbitrary status class happens to use that name.
+  for (const state of ["es-status-new-booking-state", "es-status-fuller", "es-status-held"]) {
+    const row = fixtureRows[0].replace("es-status-closed", state);
+    assert.throws(() => parseExamSelectorPage(table([row])), /unsupported booking status/);
+  }
+});
+
+test("conflicting or duplicate booking indicators cannot select the first state silently", () => {
+  const row = fixtureRows[0];
+  const original = row.match(/<span class="es-status es-status-closed"[^>]*>Closed<\/span>/)![0];
+  const open = '<a class="es-status es-status-available" href="/af/exam-selector/order/?exam_id=204">Book Now</a>';
+  for (const states of ["es-status-closed es-status-available", "es-status-available es-status-closed"]) {
+    assert.throws(() => parseExamSelectorPage(table([row.replace("es-status-closed", states)])), /conflicting booking status/);
+  }
+  for (const markup of [original + open, open + original, original + original]) {
+    assert.throws(() => parseExamSelectorPage(table([row.replace(original, markup)])), /ambiguous booking status/);
+  }
+});
+
+test("an unsupported booking state on a later page rejects the whole snapshot", async () => {
+  const next = `${URL}?s8-datatable1_start=15&s8-datatable1_rows=60`;
+  await assert.rejects(scrapeTcfListing({ fetchImpl: fakeFetch({
+    [URL]: table([fixtureRows[0]]) + more(),
+    [next]: table([fixtureRows[1].replace("es-status-closed", "es-status-new-booking-state")]),
+  }) }), /unsupported booking status/);
+});
+
 test("upcoming rows must carry a valid epoch", () => {
   const row = fixtureRows[2];
   assert.throws(() => parseExamSelectorPage(table([row.replace(/data-opens-at="\d+"/, 'data-opens-at="invalid"')])), /invalid registration epoch/);

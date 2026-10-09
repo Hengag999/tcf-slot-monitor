@@ -1,0 +1,69 @@
+[
+  {
+    "IDETABLISHMENT_BRANCH": 1,
+    "IDEXAMINATION_TYPE": 5,
+    "name": "TCF Canada sur ordinateur",
+    "examinations": [
+      {
+        "IDEXAMINATION": 2150,
+        "IDETABLISHMENT_BRANCH": 1,
+        "IDEXAMINATION_TYPE": 5,
+        "product_name": "TCF Canada sur ordinateur",
+        "examination_date": "2026-12-02",
+        "start_time": "00:00:00",
+        "end_time": "00:00:00",
+        "isFull": false,
+        "inscriptionIsInFuture": false,
+        "mainRegisterLink": {
+          "link": "https://www.af.ca/ottawa/en/my-cart/#/addExamination/2150",
+          "label": "add_to_cart"
+        }
+      },
+      {
+        "IDEXAMINATION": 2153,
+        "IDETABLISHMENT_BRANCH": 1,
+        "IDEXAMINATION_TYPE": 5,
+        "product_name": "TCF Canada sur ordinateur",
+        "examination_date": "2026-12-07",
+        "start_time": "00:00:00",
+        "end_time": "00:00:00",
+        "isFull": false,
+        "inscriptionIsInFuture": false,
+        "mainRegisterLink": {
+          "link": "https://www.af.ca/ottawa/en/my-cart/#/addExamination/2153",
+          "label": "add_to_cart"
+        }
+      },
+      {
+        "IDEXAMINATION": 2154,
+        "IDETABLISHMENT_BRANCH": 1,
+        "IDEXAMINATION_TYPE": 5,
+        "product_name": "TCF Canada sur ordinateur",
+        "examination_date": "2026-12-08",
+        "start_time": "00:00:00",
+        "end_time": "00:00:00",
+        "isFull": false,
+        "inscriptionIsInFuture": false,
+        "mainRegisterLink": {
+          "link": "https://www.af.ca/ottawa/en/my-cart/#/addExamination/2154",
+          "label": "add_to_cart"
+        }
+      },
+      {
+        "IDEXAMINATION": 2155,
+        "IDETABLISHMENT_BRANCH": 1,
+        "IDEXAMINATION_TYPE": 5,
+        "product_name": "TCF Canada sur ordinateur",
+        "examination_date": "2026-12-09",
+        "start_time": "00:00:00",
+        "end_time": "00:00:00",
+        "isFull": false,
+        "inscriptionIsInFuture": false,
+        "mainRegisterLink": {
+          "link": "https://www.af.ca/ottawa/en/my-cart/#/addExamination/2155",
+          "label": "add_to_cart"
+        }
+      }
+    ]
+  }
+]

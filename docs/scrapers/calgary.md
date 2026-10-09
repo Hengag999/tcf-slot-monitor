@@ -41,6 +41,17 @@
   not a five-minute execution guarantee, and short openings can be missed.
 
 ## Incident log
+- **2026-10-09** — Independently followed current official navigation through
+  the parent month cards and inspected the destination in the browser and raw
+  HTML. October/November are sold out. The December link leads to six dates
+  (1, 2, 3, 8, 9, 10), all individually SOLD OUT with no booking anchors. The
+  destination's November heading is stale; individual December cards are the
+  evidence. The scraper correctly returns zero. Actual Discord history ends
+  with the September 17 November announcement. The October 8 December opening
+  was missed during the already-repaired overlay-parser failure: it sold out
+  before the first repaired scheduled run, so no late availability alert was
+  sent. Current correct silence does not erase that incident. No additional
+  Calgary source change was warranted by this audit.
 - **2026-10-08** — Failure emails from runs `37796571835`,
   `37797314632`, and `37797948246` exposed real December registration buttons
   outside the empty `exam-registration` div. Public HTML showed Oncord

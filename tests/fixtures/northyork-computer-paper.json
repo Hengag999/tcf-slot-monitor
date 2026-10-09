@@ -1,0 +1,74 @@
+[
+  {
+    "id": 1095,
+    "tests": {
+      "id": 6,
+      "title": "TCF Canada"
+    },
+    "formats": {
+      "id": 5,
+      "title": "Computer"
+    },
+    "location": "Toronto",
+    "seats": 40,
+    "taken_seats": 30,
+    "has_available_seats": true,
+    "start_at_date": "2026-10-17",
+    "group_time_start": "06:00:00",
+    "group_time_end": "09:00:00"
+  },
+  {
+    "id": 1426,
+    "tests": {
+      "id": 6,
+      "title": "TCF Canada"
+    },
+    "formats": {
+      "id": 4,
+      "title": "Paper"
+    },
+    "location": "Toronto",
+    "seats": 30,
+    "taken_seats": 17,
+    "has_available_seats": true,
+    "start_at_date": "2027-01-05",
+    "group_time_start": "10:00:00",
+    "group_time_end": "13:00:00"
+  },
+  {
+    "id": 1427,
+    "tests": {
+      "id": 6,
+      "title": "TCF Canada"
+    },
+    "formats": {
+      "id": 4,
+      "title": "Paper"
+    },
+    "location": "Toronto",
+    "seats": 30,
+    "taken_seats": 5,
+    "has_available_seats": true,
+    "start_at_date": "2027-01-26",
+    "group_time_start": "10:00:00",
+    "group_time_end": "13:00:00"
+  },
+  {
+    "id": 1485,
+    "tests": {
+      "id": 6,
+      "title": "TCF Canada"
+    },
+    "formats": {
+      "id": 4,
+      "title": "Paper"
+    },
+    "location": "Toronto",
+    "seats": 30,
+    "taken_seats": 4,
+    "has_available_seats": true,
+    "start_at_date": "2027-02-23",
+    "group_time_start": "10:00:00",
+    "group_time_end": "13:00:00"
+  }
+]

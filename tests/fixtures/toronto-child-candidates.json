@@ -1,0 +1,98 @@
+{
+  "observedDate": "2026-10-09",
+  "cmComputer": {
+    "items": [
+      {
+        "id": 129585,
+        "name": "E-TCF CANADA - 4 modules",
+        "status": 0,
+        "open_spaces": 1,
+        "other_category": {
+          "id": 367,
+          "name": "E-E-TCF-Canada"
+        },
+        "start_date": "2026-10-23T00:00:00+00:00",
+        "date_patterns": [
+          {
+            "activity_start_date": "2026-10-23",
+            "activity_start_time": "10:00:00",
+            "activity_end_date": "2026-10-23",
+            "activity_end_time": "17:00:00",
+            "frequency": "Weekly",
+            "days": "Friday",
+            "activityExclusions": []
+          }
+        ]
+      },
+      {
+        "id": 129702,
+        "name": "E-TCF CANADA - 4 modules",
+        "status": 0,
+        "open_spaces": 1,
+        "other_category": {
+          "id": 367,
+          "name": "E-E-TCF-Canada"
+        },
+        "start_date": "2026-10-23T00:00:00+00:00",
+        "date_patterns": [
+          {
+            "activity_start_date": "2026-10-23",
+            "activity_start_time": "9:30:00",
+            "activity_end_date": "2026-10-23",
+            "activity_end_time": "15:30:00",
+            "frequency": "Weekly",
+            "days": "Friday",
+            "activityExclusions": []
+          }
+        ]
+      }
+    ],
+    "page": 1,
+    "totalItems": 2,
+    "limit": "300"
+  },
+  "details": {
+    "129585": {
+      "headers": {
+        "response_code": "0000"
+      },
+      "body": {
+        "detail": {
+          "activity_id": 129585,
+          "activity_name": "E-TCF CANADA - 4 modules",
+          "space_status": "Full",
+          "is_parent_activity": false,
+          "first_date": "2026-10-23"
+        }
+      }
+    },
+    "129702": {
+      "headers": {
+        "response_code": "0000"
+      },
+      "body": {
+        "detail": {
+          "activity_id": 129702,
+          "activity_name": "E-TCF CANADA - 4 modules",
+          "space_status": "Full",
+          "is_parent_activity": false,
+          "first_date": "2026-10-23"
+        }
+      }
+    }
+  },
+  "parentDetail": {
+    "headers": {
+      "response_code": "0000"
+    },
+    "body": {
+      "detail": {
+        "activity_id": 129464,
+        "activity_name": "E-TCF CANADA - 4 modules",
+        "space_status": "1 opening remaining",
+        "is_parent_activity": true,
+        "first_date": "2026-10-16"
+      }
+    }
+  }
+}

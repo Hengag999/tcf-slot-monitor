@@ -6,6 +6,12 @@ import type { RegistrationExam } from "./registrationReminders";
 const LISTING_PAGE = "https://www.alliancefrancaise.ca/en/language/exams/tcf-canada/";
 const HEADERS = { "User-Agent": "Mozilla/5.0 (compatible; tcf-slot-monitor/1.0)" };
 const MAX_PAGES = 20;
+// These are the booking states observed in the public exam-selector markup.
+// A new source status must be investigated instead of silently becoming an
+// unavailable row that advances the monitor's last-known snapshot.
+const BOOKING_STATUSES = new Set([
+  "es-status-available", "es-status-closed", "es-status-full", "es-status-opens-soon",
+]);
 
 export interface ExamSelectorRow extends RegistrationExam {
   location: string;
@@ -65,14 +71,25 @@ export function parseExamSelectorPage(
   if (!table) throw new Error("exam-selector: exam table not found — page structure may have changed");
 
   const exams: ExamSelectorRow[] = [];
-  const rows = [...table[2].matchAll(/(<tr\b[^>]*>)([\s\S]*?)<\/tr>/gi)]
-    .filter((match) => hasClass(match[1], "tableRow"));
-  const rowMarkers = [...table[2].matchAll(/<tr\b[^>]*>/gi)].filter((match) => hasClass(match[0], "tableRow"));
-  if (rowMarkers.length !== rows.length) throw new Error("exam-selector: incomplete exam row markup");
+  const allRows = [...table[2].matchAll(/(<tr\b[^>]*>)([\s\S]*?)<\/tr>/gi)];
+  const rowMarkers = [...table[2].matchAll(/<tr\b[^>]*>/gi)];
+  if (rowMarkers.length !== allRows.length) throw new Error("exam-selector: incomplete exam row markup");
+  // Headers and an empty table are valid. Data rows with a changed class must
+  // not disappear from the snapshot merely because the old selector misses.
+  for (const row of allRows.filter((match) => !hasClass(match[1], "tableRow"))) {
+    const outsideHeaders = row[2].replace(/<th\b[^>]*>[\s\S]*?<\/th>/gi, "");
+    if (/<td\b/i.test(row[2]) || stripTags(outsideHeaders)) {
+      throw new Error("exam-selector: unrecognized data row markup; snapshot not accepted");
+    }
+  }
+  const rows = allRows.filter((match) => hasClass(match[1], "tableRow"));
 
   for (const row of rows) {
     const cells = [...row[2].matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)].map((match) => match[1]);
-    if (cells.length !== 7) throw new Error(`exam-selector: expected 7 exam columns, found ${cells.length}`);
+    const cellMarkers = [...row[2].matchAll(/<t[dh]\b[^>]*>/gi)];
+    if (cells.length !== 7 || cellMarkers.length !== 7) {
+      throw new Error(`exam-selector: expected 7 exam columns, found ${cells.length} complete cells and ${cellMarkers.length} cell markers`);
+    }
     const label = stripTags(cells[0]);
     if (!label) throw new Error("exam-selector: exam row has no label");
     if (!/\btcf[\s-]+canada\b/i.test(label)) continue;
@@ -87,10 +104,17 @@ export function parseExamSelectorPage(
 
     const bookings = cells[6];
     const bookingTags = [...bookings.matchAll(/<[a-z][^>]*>/gi)].map((match) => match[0]);
-    const statusTag = bookingTags
-      .find((tag) => hasClass(tag, "es-status"));
-    let statusClass = (attr(statusTag ?? "", "class") ?? "").split(/\s+/)
-      .find((value) => value.startsWith("es-status-")) ?? "es-status-unknown";
+    const statusTags = bookingTags.filter((tag) => hasClass(tag, "es-status"));
+    if (statusTags.length > 1) {
+      throw new Error(`exam-selector: ambiguous booking status for ${label}`);
+    }
+    const statusTag = statusTags[0];
+    const statusClasses = [...new Set((attr(statusTag ?? "", "class") ?? "").split(/\s+/)
+      .filter((value) => value.startsWith("es-status-")))];
+    if (statusClasses.length > 1) {
+      throw new Error(`exam-selector: conflicting booking status classes for ${label}`);
+    }
+    let statusClass = statusClasses[0] ?? "es-status-unknown";
     // The public Oncord client documents a separate held-seat countdown card,
     // without es-status: every seat is temporarily reserved, not bookable.
     // Its expiry is NOT a registration opening time. Never invent availability
@@ -109,6 +133,9 @@ export function parseExamSelectorPage(
       // Structural flags only: do not dump HTML, URLs or embedded tokens.
       const flags = `tags=${bookingTags.length},text=${Boolean(stripTags(bookings))},heldExpiry=${bookingTags.some((tag) => attr(tag, "data-held-expires-at") !== undefined)},links=${bookingTags.filter((tag) => /^<a\b/i.test(tag)).length}`;
       throw new Error(`exam-selector: missing booking status for ${label} (${flags})`);
+    }
+    if (!heldCard && !BOOKING_STATUSES.has(statusClass)) {
+      throw new Error(`exam-selector: unsupported booking status for ${label}`);
     }
     const epoch = attr(statusTag ?? "", "data-opens-at");
     if (epoch !== undefined && (!/^\d+$/.test(epoch) || !Number.isSafeInteger(Number(epoch)) || Number(epoch) <= 0)) {

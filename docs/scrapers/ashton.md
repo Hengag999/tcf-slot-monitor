@@ -7,9 +7,12 @@
 | **Page(s)** | `https://ashtontesting.ca/tcf-canada-test/` |
 | **Discord** | #ashton (bot "BonTCF Ashton Bot") |
 | **DB key** | city=`ashton`, exam_type=`TCF Canada` |
-| **Status** | ✅ healthy (fixed) — last assessed 2026-07-13 |
+| **Status** | October 9 source audit: no active dates; official mid-October release notice. Hidden-control repair awaiting production verification. |
 
 ## How it works
+- Ignore comments/scripts and explicitly hidden subtrees, including Elementor
+  wrappers hidden on desktop, tablet, and mobile. A hidden stale picker must
+  never mask a visible replacement select or generate availability.
 - Two observed structures for the exam-date field, tried in order:
   1. **Custom radio picker** — `<div class="tcf-radio-picker">` of `<label>`
      entries (`name="tcf_radio_date"`); disabled inputs / `(FULL)` labels are
@@ -19,7 +22,9 @@
      empty/disabled/FULL/sold-out options are skipped.
 - A select containing only the empty placeholder option = **no sessions offered**
   → `[]` is the normal steady state, not an error.
-- Throws only when *neither* structure is found (genuinely unrecognised page).
+- The observed fully hidden, empty registration form is accepted as closed only
+  alongside the visible TCF registration heading and additional-date release
+  notice. Unexplained hidden forms or unknown control shapes throw.
 
 ## Known failure modes / gotchas
 - **Picker block removed when no sessions exist** (FIXED 2026-07-13). The site
@@ -37,6 +42,18 @@
   reason.
 
 ## Incident log
+- **2026-10-09** — Independently followed the official booking link and inspected
+  its rendered page, raw HTML, scripts, persisted state, and Discord history.
+  The page announces additional November/December dates by mid-October. Its four
+  FULL November radio entries remain in an all-viewport-hidden wrapper, and its
+  hidden fallback select contains only a blank option. The browser exposes no
+  active date controls. Current zero availability is justified; no current
+  missed opening was proved. Discord's latest actual message was August 19 at
+  `05:48:54.944Z`, announcing October dates. Added visibility-aware parsing and
+  fixture tests because the former parser ignored hidden ancestors and could
+  let a stale hidden picker mask a visible replacement. This latent flaw has
+  not been established as the historical cause of silence. See the complete
+  [October 9 audit](../health-assessment-2026-10-09.md) for release evidence.
 - **2026-07-13** — DB `checked_at` frozen ~84h (freshest cohort 1.7h); dry-run
   threw `tcf-radio-picker not found`. Cause: site restructured the form — the
   custom radio-picker block is gone; the exam-date field is now an empty
