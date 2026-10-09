@@ -178,3 +178,48 @@ All **162 tests**, typecheck, and whitespace checks passed for this correction,
 and independent review found no blocker. One public-only live computer check
 returned five top-level rows, three concrete children, and zero available slots.
 Final scheduled-run verification follows deployment of this correction.
+
+### Final source deployment — `211d93f`
+
+The first automatic run on the final AC hierarchy correction,
+[37883474792](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37883474792),
+started at `04:21:12Z`. All 12 source checks passed, along with 162 tests,
+typecheck, and the scoped database guard (`forbiddenPrivileges: 0`). Computer
+logged five top-level AC rows and three concrete activities, returning zero;
+paper returned a successful empty result. No computer CM request was needed.
+Ashton stayed at zero, Calgary zero, Halifax 17, and North York 174, including
+unchanged `Paper 3 → 3` with no repeat notification.
+
+The next automatic [run 37883853268](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37883853268)
+started at `04:26:03Z`, 4 minutes 51 seconds later. All 162 tests, typecheck,
+and the scoped guard passed again. Eleven sources were OK, including Toronto's
+AC-only computer discovery. Paper hit its existing SiteGround challenge within
+the one-hour grace period, approximately five minutes after its last successful
+check; its snapshot was preserved and the workflow succeeded. This is an
+accepted degraded paper observation, not twelve successful fresh scrapes or a
+permanent repair to the paper challenge.
+
+A final read-only query at `04:27:06.308Z` authenticated as `tcf_slot_monitor`.
+All 13 non-paper availability/reminder rows refreshed in the `04:26` cycle;
+paper retained its successful `04:21:34.256Z` snapshot. Its separate health
+record reported `lastSuccessAt=04:21:34.262Z`,
+`firstChallengeAt=04:26:25.585Z`, and no incident failure marker.
+North York paper had `checked_at=04:26:33.239Z` and the unchanged
+`notified_at=04:11:37.288Z`, confirming no repeated notification after its
+verified initial delivery. Toronto computer's valid empty snapshot refreshed
+at `04:26:25.270Z`; the false parent entry is gone.
+
+The scoped repairs are deployed and verified. The proposed date/month alert
+policy for Ashton, Calgary, and Halifax is **not implemented** while awaiting
+the user's preference. No temporary local automation was resumed for this audit;
+the existing production timer remains active.
+
+## Coverage standard for future assessments
+
+A health conclusion must combine execution with independent source coverage:
+follow the centre's current official booking links, inspect the actual public
+registration interface, reconcile all pages and exam formats against scraper
+output, and compare actual Discord messages with the applicable notification
+policy. An empty/fresh snapshot, matching maximum date, passing fixtures, or a
+green workflow by itself is insufficient. Preserve unknown snapshots and label
+historical gaps as unknown when the earlier source data was not captured.

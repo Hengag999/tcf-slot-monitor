@@ -7,7 +7,7 @@
 | **Page** | [Official registration page](https://www.alliance-francaise.ca/en/exams/tests/informations-about-tcf-canada/tcf-canada) |
 | **Discord** | #toronto |
 | **DB keys** | city=`toronto`, exam_type=`E-TCF Canada` and `P-TCF Canada` |
-| **Status** | **October 9 repair under production verification:** computer discovery now traverses the public AC parent/child hierarchy and excludes nonbookable parent aggregates. A live check found five parents, three concrete children, all Full, and zero bookable exams. This removes the CM computer dependency introduced by the first repair; paper and its challenge policy remain unchanged. |
+| **Status** | **October 9 production verification complete:** computer traverses the public AC parent/child hierarchy and excludes nonbookable parent aggregates. Two final scheduled runs verified five parents, three Full children, and zero bookable exams without CM computer access. Paper succeeded on the first and hit its accepted challenge grace on the second; its policy remains unchanged. |
 
 ## Current behavior
 

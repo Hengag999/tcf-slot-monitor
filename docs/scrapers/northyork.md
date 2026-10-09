@@ -81,6 +81,16 @@
   Paper records. **No production notification or deployment is established by
   these local checks.**
 
+- **2026-10-09 (production verification)** — Commit `4660c3b` shipped the Paper
+  addition. Normal run `37882682731` delivered all three Paper dates in one
+  [Discord message](https://discord.com/channels/1484038585907810535/1485198603604594730/1557968749770842212),
+  independently read in the browser. Subsequent runs at 04:16, 04:21, and 04:26
+  UTC retained 171 Computer and 3 Paper records without duplicate messages.
+  A scoped read-only query at `04:27:06.308Z` confirmed Paper's check time
+  advanced to `04:26:33.239Z` while its notification time stayed at
+  `04:11:37.288Z`. See the [complete audit](../health-assessment-2026-10-09.md)
+  for the source, delivery, and guard evidence.
+
 ## Debug recipe
 ```bash
 # Public-source dry-run only (no database or Discord)
