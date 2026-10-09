@@ -67,7 +67,7 @@ export function createSources(): CityConfig[] {
     examTypes: ["TCF Canada"], webhookEnv: "DISCORD_WEBHOOK_WINNIPEG", diffByDate: true,
     notificationStyle: {
       kind: "published-availability", sourceUrl: WINNIPEG_PAGE,
-      caveat: "官网未注明场次年份；请在报名时向考点确认。需提交报名表、付款并由考点确认，非即时锁位。",
+      caveat: "未注明年份的场次，请在报名时向考点确认。需提交报名表、付款并由考点确认，非即时锁位。",
     },
   },
   ];

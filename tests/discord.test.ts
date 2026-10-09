@@ -22,7 +22,7 @@ test("ordinary availability messages retain their existing wording and unique bo
 test("published availability notifications identify the source and limits through the real sender", async t => {
   const style: PublishedAvailabilityStyle = {
     kind: "published-availability", sourceUrl: "https://www.afmanitoba.ca/en/exams/tcf/",
-    caveat: "官网未注明场次年份；请在报名时向考点确认。需提交报名表、付款并由考点确认，非即时锁位。",
+    caveat: "未注明年份的场次，请在报名时向考点确认。需提交报名表、付款并由考点确认，非即时锁位。",
   };
   const bookingUrl = "https://www.afmanitoba.ca/en/exams/tcf/register-tcf-canada/";
   const sent: string[] = [];
