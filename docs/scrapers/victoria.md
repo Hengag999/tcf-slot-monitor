@@ -2,38 +2,43 @@
 
 | | |
 |---|---|
-| **Platform** | AF "exam-selector" listing table (`alliancefrancaise.ca`) — shared with Vancouver; migrated off Oncord |
+| **Platform** | AF Victoria exam-selector listing (`afvictoria.ca`) — separate from Vancouver |
 | **Diff strategy** | **Registration reminders** (`reminderMode: true`) — *not* availability diffing |
-| **Page(s)** | `https://www.alliancefrancaise.ca/en/language/exams/tcf-canada/` (rows with a Victoria Location) |
+| **Page(s)** | `https://www.afvictoria.ca/language/exams/tcf/` (all pages; Victoria location required) |
 | **Discord** | #victoria (bot "BonTCF Victoria Bot") |
 | **DB key** | city=`victoria`, exam_type=`TCF Canada` (the `slots` JSONB holds reminder tracking, not slots) |
-| **Status** | Benignly quiet in the complete shared listing on 2026-10-06; zero matching rows |
+| **Status** | Source coverage defect confirmed 2026-10-09; correction under verification (see latest incident) |
 
 ## How it works
-- `scrapeVictoria()` fetches the **same shared TCF-Canada listing** as Vancouver
-  (parsing in `src/lib/examSelector.ts`) and keeps only rows whose **Location
-  column mentions "Victoria"**. Vancouver takes every row that is *not*
-  Victoria's, so between the two filters no row is ever silently dropped.
-- Rows feed the shared reminder engine (`src/lib/registrationReminders.ts`):
-  new-session ping on first sighting, then 3d/2d/1d before `data-opens-at`.
-  Message header uses 维多利亚.
-- **As of 2026-07-07 the listing carries zero Victoria rows** — AF Victoria's own
-  exams FAQ points TCF candidates to AF Vancouver ("check back… when we are
-  offering more exams"). `[]` is the normal steady state, not an error. If AF
-  resumes Victoria sittings on the platform, the rows appear and reminders fire
-  with no code change.
+- Victoria has its own [official TCF booking page](https://www.afvictoria.ca/language/exams/tcf/).
+  `scrapeVictoria()` uses the shared exam-selector **parser** against that URL;
+  it must not use Vancouver's source URL. All same-origin Show More pages are
+  followed before producing a complete snapshot.
+- Every returned TCF row must explicitly identify Victoria in its location.
+  An unexpected location, missing table, or failed later page throws and
+  preserves the previous state instead of silently producing an empty result.
+- Rows feed the existing registration-reminder engine: actionable new sessions,
+  then 3d/2d/1d reminders ahead of `data-opens-at`. Already closed/full records are
+  tracked silently. The timezone is `America/Vancouver`, labelled **维多利亚时间**.
+- The existing city/exam-type database row and Discord webhook are retained.
+  A due notification must be acknowledged by Discord before tracking advances.
 
-## Known failure modes / gotchas
-- **AF Victoria merged into AF-CAPA** (contact `exam-victoria@afcapa.ca`); its own
-  site (`afvictoria.ca`, still Oncord) no longer sells exams — the old product page
-  `/products/ceip-tcf-canada-full-exam-victoria/` returns a plain **404** (not the
-  "isn't available" sold-out marker), so the old Oncord scraper threw every run.
-- **Location filter is substring-based** (`/victoria/i` on the Location cell). If
-  the platform renames the centre (e.g. drops the word Victoria), rows would fall
-  through to Vancouver's channel rather than vanish — watch #vancouver for
-  Victoria-looking sittings if this city stays silent after AF re-lists exams.
-- Everything in `docs/scrapers/vancouver.md` (opens-at semantics, no sub-day
-  reminders, 2000-char chunking) applies here too.
+## Known failure modes and coverage boundaries
+- The retired Oncord product URL broke in June 2026. The July repair switched
+  to the AF-CAPA Vancouver listing. By October 9 that source choice was wrong:
+  Victoria's own TCF page had 27 sessions while Vancouver's 106-row listing
+  contained none. A successful empty scrape was therefore a coverage failure.
+- The general Victoria `/language/exams/` page still contains older prose
+  directing candidates to Vancouver and asking them to check back. Its own
+  dedicated `/language/exams/tcf/` page is a working booking calendar. Inspect
+  actual exam links and tables instead of treating the general FAQ as proof
+  that Victoria is inactive.
+- Fresh `checked_at` and an OK workflow establish execution/persistence, not
+  source completeness. Zero due reminders also do not exercise the webhook.
+- Historical assertions below describe what was inspected at the time. In
+  particular, the July claim that there was no bookable Victoria TCF anywhere
+  was broader than the evidence; the October 6 assessment also missed the
+  separate Victoria calendar. Do not reuse those as current health conclusions.
 
 ## Incident log
 - **2026-07-07** — DB `checked_at` frozen since **2026-06-19** (~18 days; every other
@@ -61,11 +66,8 @@
 
 ## Debug recipe
 ```bash
-# Dry-run the scraper (prints Victoria rows; "No exams listed" is the steady state)
+# See all Victoria rows, including closed/full and future registration records
 npx tsx scripts/scrapers/victoria.ts
-
-# See ALL rows + locations on the shared listing (is Victoria back?)
-npx tsx scripts/scrapers/vancouver.ts
 
 # DB state (slots JSONB holds reminder tracking)
 SELECT city, exam_type, slots,
@@ -83,3 +85,53 @@ Latest observed Discord message: May 26 06:04 China time. Stored state was refre
 ## Shipment verification — 2026-10-06 21:18 China time
 
 The repairs are deployed on `master`. [GitHub run 37469738669](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37469738669) passed all source checks and refreshed stored state. See `docs/health-assessment-2026-10-06.md` for the first-run Discord timeout, verified message reconciliation, and final production evidence. Earlier local-only/pending-deployment statements above describe the pre-shipment assessment.
+
+
+## October 9, 2026 — false healthy result from the wrong source
+
+The user questioned silence since May. The Discord channel was inspected
+in the logged-in browser: its last message was **May 26 at 06:04 China time**
+(`2026-05-25T22:04:04.589Z`), announcing August 17–27 exams through the old
+product URL. At 11:35 China time, a read-only query authenticated as
+`tcf_slot_monitor` found an empty Victoria tracking array, refreshed at
+`03:31:42.204Z`, with `notified_at=2026-05-25T22:04:06.829Z`.
+
+The monitored Vancouver source returned three complete HTTP 200 pages:
+15 + 60 + 31 = **106 rows**, all Vancouver (51) or New Westminster (55).
+Its location filter was set to Any Location and offered only those two sites.
+This confirms the current parser was not dropping Victoria rows from that
+source; Victoria was publishing elsewhere.
+
+The separate [official Victoria TCF page](https://www.afvictoria.ca/language/exams/tcf/)
+returned two HTTP 200 pages, 15 + 12 = **27 rows**, all at Alliance Française
+Victoria, 1218 Langley Street. The existing parser reads it without changes:
+**11 closed, 12 full, and four upcoming registrations**.
+
+| Exam date | Published places | Registration opens |
+|---|---:|---|
+| December 15, 2026 | 9 | October 20, 15:00 Victoria time |
+| December 16, 2026 | 8 | October 20, 15:00 Victoria time |
+| December 17, 2026 | 16 | October 20, 15:00 Victoria time |
+| December 18, 2026 | 8 | October 20, 15:00 Victoria time |
+
+The source epoch is `1792533600`, or `2026-10-20T22:00:00Z`:
+**October 21 at 06:00 China time**. These are future registration opportunities,
+not seats currently bookable. December 1–4 dates are already full; historical
+closed/full rows must not trigger catch-up availability alerts.
+
+The general exams page's old Vancouver advice conflicts with this dedicated
+calendar. The exact date this independent calendar resumed, and the number of
+historical openings missed, have not been established. The current 27-row
+calendar proves the coverage defect; green jobs never disproved it.
+
+Discord settings still showed one existing webhook, **BonTCF Victoria Bot**,
+posting to `#victoria`, created April 19. The encrypted GitHub secret was present
+with that date. This metadata check did not send a test message or independently
+prove the secret's delivery; the next normal scheduled notification will do so.
+No credential, database grant, scheduler, or channel permission changes are
+required. Production verification follows after the source correction ships.
+
+The correction passed **129 offline tests**, TypeScript checking, and whitespace
+validation. Regression fixtures cover both real pages, the actual orchestrator
+source URL, four upcoming reminders, 23 silent baselines, repeat suppression,
+and failures that must preserve the previous snapshot.

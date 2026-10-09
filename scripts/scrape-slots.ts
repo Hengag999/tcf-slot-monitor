@@ -6,6 +6,7 @@ import { scrapeOttawa } from "./scrapers/ottawa";
 import { scrapeAshton } from "./scrapers/ashton";
 import { scrapeNorthYork } from "./scrapers/northyork";
 import { scrapeWinnipeg, WINNIPEG_PAGE } from "./scrapers/winnipeg";
+import { scrapeVictoria } from "./scrapers/victoria";
 import { bookableEdmontonSlots, scrapeEdmontonExams } from "./scrapers/edmonton";
 import { scrapeTcfListing, type ExamSelectorRow } from "../src/lib/examSelector";
 import { getPrevState, upsertState } from "../src/lib/db";
@@ -45,7 +46,7 @@ export interface CityConfig {
 const DRY_RUN = process.argv.includes("--dry-run");
 
 export function createSources(): CityConfig[] {
-  // Cache only inside one run: both consumers must see the same complete listing.
+  // Cache only inside one run: Edmonton's consumers share one complete listing.
   let bc: Promise<ExamSelectorRow[]> | undefined;
   let edmonton: Promise<ExamSelectorRow[]> | undefined;
   const bcRows = () => bc ??= scrapeTcfListing();
@@ -59,7 +60,7 @@ export function createSources(): CityConfig[] {
   { key: "ottawa", label: "Ottawa", scrape: scrapeOttawa, webhookEnv: "DISCORD_WEBHOOK_OTTAWA" },
   { key: "ashton", label: "Ashton", scrape: scrapeAshton, webhookEnv: "DISCORD_WEBHOOK_ASHTON" },
   { key: "northyork", label: "North York", scrape: scrapeNorthYork, webhookEnv: "DISCORD_WEBHOOK_NORTHYORK", diffByDate: true },
-  { key: "victoria", label: "Victoria", scrape: async () => (await bcRows()).filter((row) => /victoria/i.test(row.location)), webhookEnv: "DISCORD_WEBHOOK_VICTORIA", reminderMode: true, zhLabel: "维多利亚" },
+  { key: "victoria", label: "Victoria", scrape: scrapeVictoria, webhookEnv: "DISCORD_WEBHOOK_VICTORIA", reminderMode: true, zhLabel: "维多利亚", reminderOptions: { timeZone: "America/Vancouver", timeZoneLabel: "维多利亚时间" } },
   { key: "edmonton", source: "availability", label: "Edmonton", scrape: async () => bookableEdmontonSlots(await edmontonRows()), examTypes: ["TCF Canada"], webhookEnv: "DISCORD_WEBHOOK_EDMONTON", diffByDate: true },
   { key: "edmonton", source: "registration", label: "Edmonton", scrape: edmontonRows, webhookEnv: "DISCORD_WEBHOOK_EDMONTON", reminderMode: true, zhLabel: "埃德蒙顿", reminderOptions: { futureOnly: true, examType: "TCF Canada registration reminders", timeZone: "America/Edmonton", timeZoneLabel: "埃德蒙顿时间" } },
   {
