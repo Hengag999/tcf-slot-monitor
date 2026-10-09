@@ -89,7 +89,7 @@ malformed response was observed; this guard is separate from the silence policy.
 | North York | Official booking API offers 171 computer plus three paper sittings. The monitor previously selected only format 5 (computer). | User approved adding paper format 4, retaining separate exam-type state and date diffs. |
 | Winnipeg | Official published dates are November 3 (1 place), 4 (2), and 10 (1); scraper and state agree. | Current coverage matches the published page; booking still requires form/payment/centre confirmation. |
 | Victoria | Own calendar has 27 rows; four future openings were delivered and the next cycle produced no repeat. | Repair and two-cycle production verification recorded in its runbook. |
-| Toronto | Paper's four future CM records have zero spaces; independent details show On Hold. Computer's AC search returned a parent with one apparent opening, but its browser page redirects to a group showing No sub-activities. | Repaired discovery uses official CM category 367 and validates concrete child details. Current two candidates are both Full; repaired local computer output is zero. |
+| Toronto | Paper's four future CM records have zero spaces; independent details show On Hold. Computer's AC search returned a parent with one apparent opening, but its browser page redirects to a group showing No sub-activities. | Final discovery follows all advertised AC children, including closed parents. Five top-level rows yield three Full children; repaired local computer output is zero without CM access. |
 
 North York's three paper dates are **January 5, January 26, and February 23,
 2027**, with 13, 25, and 26 advertised remaining places at inspection.
@@ -127,3 +127,54 @@ will announce its three current dates once through the normal pipeline.
 
 Ordinary scheduled-run verification follows shipment; local checks alone do not
 prove deployment, credential delivery, or production persistence.
+
+### First production cycle — 04:11 UTC
+
+Commit `4660c3b` shipped the repairs. Automatic
+[run 37882682731](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37882682731)
+passed all 156 tests, typecheck, and the scoped database guard with zero forbidden
+privileges. Ashton returned 0, Calgary 0, Halifax 17, Ottawa 4, and North York
+174. All ten non-Toronto sources passed. North York's new paper dates were
+accepted in one [Discord message](https://discord.com/channels/1484038585907810535/1485198603604594730/1557968749770842212)
+and independently read in the logged-in browser at `04:11:35.605Z`.
+
+**The overall run failed:** computer discovery's new CM dependency received a
+recognized SiteGround HTTP 202 challenge and preserved its prior state. Paper
+encountered the same challenge within its approved 15-minute grace period.
+This is not a successful Toronto cutover and must not be reported as all sources
+healthy. Investigation of complete public AC child discovery continues; challenge
+bypass and silent suppression are not acceptable replacements for coverage.
+
+A scoped read-only check at `04:12:59.878Z` confirmed refreshed non-Toronto state.
+North York computer retained 171 records and paper stored three, with paper
+`checked_at`/`notified_at=04:11:37.288Z`. Toronto computer retained its preceding
+snapshot at `04:06:27.840Z`, rather than clearing state after unknown discovery.
+
+### Follow-up and Toronto discovery correction
+
+Automatic [run 37883073562](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37883073562)
+at `04:16:12Z` passed all 12 source checks, 156 tests, typecheck, and the scoped
+guard. Toronto CM access recovered for that cycle, allowing the invalid parent
+snapshot to clear; this recovery alone did not solve the new dependency.
+All priority counts stayed unchanged and North York paper remained `3 → 3`
+with no additional Discord message.
+
+The public AC frontend revealed the complete discovery path: top-level rows
+advertise child IDs, and `/rest/activities/subs/{parentId}` returns those children.
+The former scraper incorrectly skipped closed parents instead of traversing
+them. Three verified calls returned exactly the advertised IDs:
+`129582 → 129585`, `129586 → 129587`, and `129700 → 129702`, all Full.
+The parent with the misleading opening, `129464`, advertises no children.
+This covers both CM-discovered children plus an additional closed child.
+
+Computer discovery now traverses the public AC hierarchy, validates complete
+top-level and child pagination, and requires exact child identities. Parent
+space counts never become availability. Full children remain closed; potentially
+open children require matching non-parent detail confirmation. Any partial or
+unknown hierarchy rejects the whole snapshot. Computer makes **no CM requests**;
+paper retains its approved challenge policy and source.
+
+All **162 tests**, typecheck, and whitespace checks passed for this correction,
+and independent review found no blocker. One public-only live computer check
+returned five top-level rows, three concrete children, and zero available slots.
+Final scheduled-run verification follows deployment of this correction.

@@ -7,7 +7,7 @@
 | **Page(s)** | API: `api.gblc.ca/candidates/test-schedules/?test_id=6&has_available_seats=true` · booking: `gblc.ca/en/book-now/choose-date` |
 | **Discord** | #northyork |
 | **DB key** | city=`northyork`, exam_type=`TCF Canada - Computer` or `TCF Canada - Paper` |
-| **Status** | Computer coverage verified 2026-10-09; approved Paper addition validated locally, production verification pending |
+| **Status** | Computer coverage and approved Paper addition verified in production 2026-10-09; paper notification delivered once and deduplicated on the next cycle |
 
 ## How it works
 - `scrapeNorthYork()` GETs the official booking site's public schedule API for

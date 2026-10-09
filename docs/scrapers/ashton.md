@@ -7,7 +7,7 @@
 | **Page(s)** | `https://ashtontesting.ca/tcf-canada-test/` |
 | **Discord** | #ashton (bot "BonTCF Ashton Bot") |
 | **DB key** | city=`ashton`, exam_type=`TCF Canada` |
-| **Status** | October 9 source audit: no active dates; official mid-October release notice. Hidden-control repair awaiting production verification. |
+| **Status** | October 9 source audit: no active dates; official mid-October release notice. Hidden-control repair passed two production cycles. |
 
 ## How it works
 - Ignore comments/scripts and explicitly hidden subtrees, including Elementor

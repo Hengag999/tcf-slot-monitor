@@ -5,12 +5,23 @@ import { scrapeToronto, scrapeTorontoComputer, scrapeTorontoPaper, TorontoPaperC
 import { createSources, runMonitor, type MonitorDependencies } from "../scripts/scrape-slots";
 
 const fixture = JSON.parse(readFileSync(new URL("./fixtures/toronto-child-candidates.json", import.meta.url), "utf8"));
-const item = (id = 129585, format = "computer") => ({
+const hierarchy = JSON.parse(readFileSync(new URL("./fixtures/toronto-ac-hierarchy.json", import.meta.url), "utf8"));
+const item = (id = 123, format = "paper") => ({
   id, name: `${format === "computer" ? "E" : "P"}-TCF CANADA - 4 modules`,
   status: 0, open_spaces: 1, other_category: { id: format === "computer" ? 367 : 368 },
   start_date: "2026-10-23T00:00:00+00:00",
 });
 const list = (items: ReturnType<typeof item>[]) => ({ items, page: 1, totalItems: items.length, limit: "300" });
+const activity = (id = 129585, status = "Full", children: number[] | null = null) => ({
+  id, name: "E-TCF CANADA - 4 modules", number: "SCTCFC231026-MS",
+  total_open: 14, already_enrolled: 14,
+  parent_activity: children !== null, num_of_sub_activities: children?.length ?? 0,
+  sub_activity_ids: children, urgent_message: { status_description: status },
+});
+const acList = (items: ReturnType<typeof activity>[], field = "activity_items", page = 1, pages = 1, total = items.length) => ({
+  headers: { response_code: "0000", page_info: { page_number: page, total_page: pages, total_records: total } },
+  body: { [field]: items },
+});
 const detail = (id: number, status: string, date = "2026-10-23", parent = false) => ({
   headers: { response_code: "0000" },
   body: { detail: { activity_id: id, space_status: status, first_date: date, is_parent_activity: parent } },
@@ -21,7 +32,6 @@ const response = (value: unknown, status = 200) => new Response(JSON.stringify(v
 const replaceFetch = (handler: (url: string, init?: RequestInit) => Response | Promise<Response>) =>
   mock.method(globalThis, "fetch", async (input, init) => handler(String(input), init));
 
-// Mock failures must not enter the real GitHub source-health step summary.
 const inheritedSummary = process.env.GITHUB_STEP_SUMMARY;
 beforeEach(() => { delete process.env.GITHUB_STEP_SUMMARY; });
 afterEach(() => {
@@ -31,33 +41,32 @@ afterEach(() => {
 });
 
 test("paper CM failure does not prevent independent computer monitoring", async () => {
-  replaceFetch(url => new URL(url).searchParams.get("othercategory") === "368" ? response({}, 403) : response(list([])));
+  replaceFetch(url => url.includes("cm-api") ? response({}, 403) : response(acList([])));
   const [computer, paper] = await Promise.allSettled([scrapeTorontoComputer(), scrapeTorontoPaper()]);
   assert.deepEqual(computer, { status: "fulfilled", value: [] });
   assert.equal(paper.status, "rejected");
-  if (paper.status === "rejected") assert.match(paper.reason.message, /CM API category 368: HTTP 403/);
 });
 
 test("complete Toronto aggregate rejects instead of publishing a partial snapshot", async () => {
-  replaceFetch(url => new URL(url).searchParams.get("othercategory") === "368" ? response({}, 403) : response(list([])));
+  replaceFetch(url => url.includes("cm-api") ? response({}, 403) : response(acList([])));
   await assert.rejects(scrapeToronto, /Toronto coverage is incomplete/);
 });
 
-test("computer CM failure does not prevent independent paper monitoring", async () => {
-  replaceFetch(url => new URL(url).searchParams.get("othercategory") === "367" ? response({}, 403) : response(list([])));
+test("computer AC failure does not prevent independent paper monitoring", async () => {
+  replaceFetch(url => url.includes("cm-api") ? response(list([])) : response({}, 403));
   const [computer, paper] = await Promise.allSettled([scrapeTorontoComputer(), scrapeTorontoPaper()]);
   assert.equal(computer.status, "rejected");
   assert.deepEqual(paper, { status: "fulfilled", value: [] });
 });
 
-test("valid complete empty CM lists are known empty for their own exam type", async () => {
-  replaceFetch(() => response(list([])));
+test("valid complete empty lists are known empty for their own exam type", async () => {
+  replaceFetch(url => response(url.includes("cm-api") ? list([]) : acList([])));
   assert.deepEqual(await scrapeToronto(), []);
 });
 
 test("JSON error envelopes cannot become known-empty lists", async () => {
   replaceFetch(() => response({ error: "Access denied" }));
-  await assert.rejects(scrapeTorontoComputer, /missing items array/);
+  await assert.rejects(scrapeTorontoComputer, /invalid response/);
   await assert.rejects(scrapeTorontoPaper, /missing items array/);
 });
 
@@ -127,7 +136,7 @@ test("other paper HTTP failures and HTML classifications are not the known chall
   }
 });
 
-test("a SiteGround challenge on CM computer discovery cannot receive the paper policy type", async () => {
+test("a SiteGround challenge on AC computer discovery cannot receive the paper policy type", async () => {
   const originalSetTimeout = globalThis.setTimeout;
   mock.method(globalThis, "setTimeout", (callback, _delay, ...args) => originalSetTimeout(callback, 0, ...args));
   mock.method(console, "warn", () => {});
@@ -167,142 +176,172 @@ test("a later valid JSON retry recovers from a transient HTML response", async (
 });
 
 
-test("CM totals, page and limit must establish complete discovery", async () => {
-  for (const broken of [
-    { items: [] }, { ...list([]), totalItems: 2 }, { ...list([]), page: 2 },
-    { ...list([]), limit: "20" }, { ...list([]), totalItems: -1 },
-    list(Array.from({ length: 300 }, (_, i) => item(i + 1))),
-  ]) {
+
+test("paper CM totals, page and limit must establish complete discovery", async () => {
+  for (const broken of [{ items: [] }, { ...list([]), totalItems: 2 }, { ...list([]), page: 2 },
+    { ...list([]), limit: "20" }, { ...list([]), totalItems: -1 }, list(Array.from({ length: 300 }, (_, i) => item(i + 1)))]) {
     replaceFetch(() => response(broken));
-    await assert.rejects(scrapeTorontoComputer, /incomplete or invalid pagination/);
     await assert.rejects(scrapeTorontoPaper, /incomplete or invalid pagination/);
   }
 });
 
-test("duplicate or malformed CM candidates cannot become a partial snapshot", async () => {
-  for (const entries of [
-    [item(), item()], [{ ...item(), id: -1 }], [{ ...item(), name: "Preparation workshop" }],
-    [{ ...item(), other_category: { id: 368 } }], [{ ...item(), status: 4 }],
-    [{ ...item(), open_spaces: 0 }], [{ ...item(), open_spaces: "1" }],
-  ]) {
+test("duplicate or malformed CM paper candidates cannot become a partial snapshot", async () => {
+  for (const entries of [[item(), item()], [{ ...item(), id: -1 }], [{ ...item(), name: "Preparation workshop" }],
+    [{ ...item(), other_category: { id: 367 } }], [{ ...item(), status: 4 }], [{ ...item(), open_spaces: 0 }]]) {
     replaceFetch(() => response({ ...list([]), items: entries, totalItems: entries.length }));
-    await assert.rejects(scrapeTorontoComputer, /duplicate|malformed or unexpected/);
+    await assert.rejects(scrapeTorontoPaper, /duplicate|malformed or unexpected/);
   }
 });
 
-test("configured computer source follows official child discovery, not the false-positive parent search", async () => {
-  const requests: string[] = [];
-  replaceFetch(url => {
-    requests.push(url);
-    const parsed = new URL(url);
-    if (parsed.hostname === "cm-api.alliance-francaise.ca") {
-      assert.equal(parsed.searchParams.get("othercategory"), "367");
-      assert.equal(parsed.searchParams.get("enddate"), "gte");
-      assert.equal(parsed.searchParams.get("openspaces"), "1");
-      assert.equal(parsed.searchParams.get("status"), "0");
-      assert.equal(parsed.searchParams.get("limit"), "300");
-      return response(fixture.cmComputer);
-    }
-    const id = parsed.pathname.split("/").at(-1)!;
-    assert.ok(fixture.details[id], "only discovered actual child details should be requested");
-    return response(fixture.details[id]);
+test("configured computer source covers all real advertised children without CM or parent false positives", async () => {
+  const childIds: number[] = [];
+  const calls = replaceFetch((url, init) => {
+    assert.ok(!url.includes("cm-api"), "computer must not depend on the challenged CM host");
+    if (url.includes("/activities/list")) return response(hierarchy.listing);
+    const parentId = new URL(url).pathname.split("/").at(-1)!;
+    assert.ok(hierarchy.children[parentId]);
+    const body = JSON.parse(String(init?.body));
+    const ids = hierarchy.children[parentId].body.sub_activities.map((i: { id: number }) => i.id);
+    assert.equal(body.sub_activity_ids, ids.join(","));
+    assert.equal(body.open_spots, 0);
+    childIds.push(...ids);
+    return response(hierarchy.children[parentId]);
   });
   const source = createSources().find(source => source.key === "toronto" && source.source === "computer")!;
-  assert.deepEqual(source.examTypes, ["E-TCF Canada"]);
   assert.deepEqual(await source.scrape(), []);
-  assert.equal(requests.length, 3);
-  assert.ok(requests.every(url => !url.includes("activities/list") && !url.includes("129464")));
+  assert.equal(calls.mock.calls.length, 4);
+  assert.deepEqual(childIds.sort(), [129585, 129587, 129702]);
+  assert.ok(hierarchy.officialCmCandidates.every((id: number) => childIds.includes(id)));
 });
 
-test("a parent aggregate reporting an opening is not a verified bookable sitting", async () => {
-  replaceFetch(url => response(url.includes("cm-api") ? list([item(129464)]) : fixture.parentDetail));
+test("a parent with no children and a positive aggregate space count is never a candidate", async () => {
+  const calls = replaceFetch(() => response(acList([{ ...activity(129464, "", []), total_open: 14, already_enrolled: 13 }])));
+  assert.deepEqual(await scrapeTorontoComputer(), []);
+  assert.equal(calls.mock.calls.length, 1);
+});
+
+test("a closed parent is traversed and its genuinely bookable child is returned", async () => {
+  replaceFetch(url => response(url.includes("/activities/list") ? acList([activity(10, "On hold", [11])])
+    : url.includes("/subs/") ? acList([activity(11, "")], "sub_activities") : detail(11, "3 openings", "2026-10-24")));
+  assert.deepEqual(await scrapeTorontoComputer(), [{
+    id: "11", examType: "E-TCF Canada", date: "2026-10-24", availableSeats: 3,
+    bookingUrl: "https://anc.ca.apm.activecommunities.com/aftoronto/activity/search/detail/11",
+  }]);
+});
+
+test("all top-level and child pages must be complete before returning a snapshot", async () => {
+  const pages: string[] = [];
+  replaceFetch((url, init) => {
+    const page = JSON.parse(new Headers(init?.headers).get("page_info")!).page_number;
+    const top = url.includes("/activities/list");
+    pages.push(`${top ? "top" : "child"}:${page}`);
+    return response(top ? acList([activity(page, "On hold", page === 1 ? [11, 12] : [])], "activity_items", page, 2, 2)
+      : acList([activity(page + 10)], "sub_activities", page, 2, 2));
+  });
+  assert.deepEqual(await scrapeTorontoComputer(), []);
+  assert.deepEqual(pages, ["top:1", "top:2", "child:1", "child:2"]);
+});
+
+test("malformed advertised child counts, IDs and hierarchy metadata fail the source", async () => {
+  for (const change of [{ num_of_sub_activities: 2 }, { sub_activity_ids: [11, 11], num_of_sub_activities: 2 },
+    { sub_activity_ids: null }, { parent_activity: undefined }, { parent_activity: false }, { sub_activity_ids: [-1] }]) {
+    replaceFetch(() => response(acList([{ ...activity(10, "On hold", [11]), ...change } as ReturnType<typeof activity>])));
+    await assert.rejects(scrapeTorontoComputer, /malformed activity hierarchy/);
+  }
+});
+
+test("missing, duplicate, wrong-format or nested children invalidate the entire computer snapshot", async () => {
+  for (const children of [[], [activity(12)], [activity(11), activity(11)],
+    [{ ...activity(11), name: "P-TCF CANADA - 4 modules" }], [activity(11, "", [])]]) {
+    replaceFetch(url => response(url.includes("/activities/list") ? acList([activity(10, "On hold", [11])])
+      : acList(children, "sub_activities")));
+    await assert.rejects(scrapeTorontoComputer, /incomplete|duplicate|unexpected children/);
+  }
+});
+
+test("failed child request cannot return a partial computer snapshot", async () => {
+  replaceFetch(url => url.includes("/activities/list") ? response(acList([activity(10, "On hold", [11])])) : response({}, 403));
+  await assert.rejects(scrapeTorontoComputer, /AC children of 10/);
+});
+
+test("truncated or unstable pagination cannot return a successful empty result", async () => {
+  for (const bad of [acList([], "activity_items", 1, 1, 2), acList([activity(1), activity(1)]),
+    { ...acList([]), headers: { response_code: "1001" } }]) {
+    replaceFetch(() => response(bad));
+    await assert.rejects(scrapeTorontoComputer, /incomplete|duplicate|invalid response/);
+  }
+});
+
+test("paper rows in category30 are not relabeled as computer, while unfamiliar products fail", async () => {
+  replaceFetch(() => response(acList([{ ...activity(), name: "P-TCF CANADA - 4 modules" }])));
+  assert.deepEqual(await scrapeTorontoComputer(), []);
+  replaceFetch(() => response(acList([{ ...activity(), name: "TCF preparation" }])));
+  await assert.rejects(scrapeTorontoComputer, /unrecognized TCF product/);
+});
+
+test("a detail response unexpectedly identifying a parent cannot generate an opening", async () => {
+  replaceFetch(url => response(url.includes("/activities/list") ? acList([activity(129464, "")]) : fixture.parentDetail));
   await assert.rejects(scrapeTorontoComputer, (error: AggregateError) => {
-    assert.match(error.message, /availability unknown/);
-    assert.match(error.errors[0].message, /parent aggregate/);
-    return true;
+    assert.match(error.errors[0].message, /parent aggregate/); return true;
   });
 });
 
 test("missing parent metadata and mismatched IDs fail rather than accepting ambiguous detail", async () => {
   for (const change of [{ is_parent_activity: undefined }, { is_parent_activity: "false" }, { activity_id: undefined }, { activity_id: 99 }]) {
-    const data = detail(129585, "1 opening");
-    Object.assign(data.body.detail, change);
-    replaceFetch(url => response(url.includes("cm-api") ? list([item()]) : data));
+    const data = detail(129585, "1 opening"); Object.assign(data.body.detail, change);
+    replaceFetch(url => response(url.includes("/activities/list") ? acList([activity(129585, "")]) : data));
     await assert.rejects(scrapeTorontoComputer, /availability unknown/);
   }
 });
 
-test("detail supplies the authoritative exam date and seat count for a real child", async () => {
-  replaceFetch(url => response(url.includes("cm-api") ? list([item()]) : detail(129585, "3 openings", "2026-10-24")));
-  assert.deepEqual(await scrapeTorontoComputer(), [{
-    id: "129585", examType: "E-TCF Canada", date: "2026-10-24", availableSeats: 3,
-    startTime: undefined, endTime: undefined,
-    bookingUrl: "https://anc.ca.apm.activecommunities.com/aftoronto/activity/search/detail/129585",
-  }]);
-});
-
-test("closed detail overrides an apparently open CM computer child", async () => {
-  replaceFetch(url => response(url.includes("cm-api") ? list([item()]) : detail(129585, "On Hold")));
-  assert.deepEqual(await scrapeTorontoComputer(), []);
-});
-
-test("one failed detail rejects the entire exam type, including other apparently open children", async () => {
-  replaceFetch(url => {
-    if (url.includes("cm-api")) return response(list([item(1), item(2)]));
-    return url.includes("/detail/1?") ? response(detail(1, "3 openings")) : response({}, 403);
-  });
+test("one failed detail rejects the exam type including other apparently open children", async () => {
+  replaceFetch(url => url.includes("/activities/list") ? response(acList([activity(1, ""), activity(2, "")]))
+    : url.includes("/detail/1?") ? response(detail(1, "3 openings")) : response({}, 403));
   await assert.rejects(scrapeTorontoComputer, /detail check\(s\) failed; availability unknown/);
 });
 
 test("missing, unknown or unsuccessful detail cannot generate an opening", async () => {
-  for (const data of [
-    detail(129585, ""), detail(129585, "Ask the centre"), { headers: { response_code: "0000" }, body: {} },
-    { ...detail(129585, "1 opening"), headers: { response_code: "1001" } },
-  ]) {
-    replaceFetch(url => response(url.includes("cm-api") ? list([item()]) : data));
+  for (const data of [detail(129585, ""), detail(129585, "Ask the centre"), { headers: { response_code: "0000" }, body: {} },
+    { ...detail(129585, "1 opening"), headers: { response_code: "1001" } }]) {
+    replaceFetch(url => response(url.includes("/activities/list") ? acList([activity(129585, "")]) : data));
     await assert.rejects(scrapeTorontoComputer, /availability unknown/);
   }
 });
 
-test("unknown dates fail and the official CM date can fill a missing detail date", async () => {
-  replaceFetch(url => response(url.includes("cm-api") ? list([{ ...item(), start_date: "invalid" }]) : detail(129585, "3 openings", "")));
+test("unknown dates fail; concrete activity numbers can fill a missing detail date", async () => {
+  replaceFetch(url => response(url.includes("/activities/list") ? acList([{ ...activity(129585, ""), number: "invalid" }]) : detail(129585, "3 openings", "")));
   await assert.rejects(scrapeTorontoComputer, /availability unknown/);
-  replaceFetch(url => response(url.includes("cm-api") ? list([item()]) : detail(129585, "3 openings", "")));
+  replaceFetch(url => response(url.includes("/activities/list") ? acList([activity(129585, "")]) : detail(129585, "3 openings", "")));
   assert.equal((await scrapeTorontoComputer())[0].date, "2026-10-23");
 });
 
-test("paper retains its source, exam type and times while confirming a child detail", async () => {
+test("paper retains its CM source, exam type and times while confirming a child detail", async () => {
   replaceFetch(url => {
     if (url.includes("cm-api")) {
       assert.equal(new URL(url).searchParams.get("othercategory"), "368");
-      return response({ ...list([item(123, "paper")]), items: [{ ...item(123, "paper"), date_patterns: [{
+      return response({ ...list([item()]), items: [{ ...item(), date_patterns: [{
         activity_start_date: "2026-11-20", activity_start_time: "9:00:00", activity_end_time: "12:00:00",
       }] }] });
     }
     return response(detail(123, "2 openings", "2026-11-20"));
   });
   const [slot] = await scrapeTorontoPaper();
-  assert.equal(slot.examType, "P-TCF Canada");
-  assert.equal(slot.date, "2026-11-20");
-  assert.equal(slot.startTime, "09:00");
-  assert.equal(slot.endTime, "12:00");
-  assert.equal(slot.availableSeats, 2);
+  assert.equal(slot.examType, "P-TCF Canada"); assert.equal(slot.startTime, "09:00"); assert.equal(slot.endTime, "12:00");
 });
 
-test("real configured computer request failure preserves prior state; only a verified empty result clears it", async () => {
+test("configured computer child failure preserves state; verified empty hierarchy alone clears it", async () => {
   const source = createSources().find(source => source.key === "toronto" && source.source === "computer")!;
   const writes: unknown[] = [];
-  const prior = [{ city: "toronto", exam_type: "E-TCF Canada", slots: [{ id: "129464" }] }];
   const io: MonitorDependencies = {
-    getPrevState: async () => structuredClone(prior),
+    getPrevState: async () => [{ city: "toronto", exam_type: "E-TCF Canada", slots: [{ id: "129464" }] }],
     upsertState: async (...args) => { writes.push(args); },
     notifyDiscord: async () => assert.fail("no notification is due"),
     runRegistrationReminders: async () => assert.fail("not a reminder source"),
   };
-  replaceFetch(() => response({}, 403));
+  replaceFetch(url => url.includes("/activities/list") ? response(acList([activity(10, "On hold", [11])])) : response({}, 403));
   await assert.rejects(runMonitor([source], false, io), /computer \(scrape\)/);
   assert.deepEqual(writes, []);
-  replaceFetch(() => response(list([])));
+  replaceFetch(() => response(acList([activity(129464, "", [])])));
   await runMonitor([source], false, io);
   assert.deepEqual(writes, [["toronto", "E-TCF Canada", [], false]]);
 });

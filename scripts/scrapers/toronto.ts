@@ -1,8 +1,8 @@
-// Toronto has two independently monitored exam types, discovered through the
-// official registration page's CM categories: 367 computer and 368 paper.
-// AC search exposes parent aggregates that can show openings but have no bookable
-// sub-activities. Confirm actual CM candidates against AC child activity details;
-// unknown discovery/detail fails its exam type and preserves the previous state.
+// Toronto has two independently monitored exam types. Computer discovery follows
+// the public AC search hierarchy, including children of closed parent aggregates.
+// Paper uses the official CM category 368 feed. Parent space counts are not
+// bookable sittings; only concrete child/direct activities pass detail validation.
+// Unknown discovery/detail fails its exam type and preserves the previous state.
 
 export type ExamType = "E-TCF Canada" | "P-TCF Canada";
 
@@ -29,7 +29,8 @@ const CM_API_BASE = "https://cm-api.alliance-francaise.ca/groupcourses";
 const ACTIVE_API_BASE = "https://anc.ca.apm.activecommunities.com/aftoronto/rest/activity/detail";
 const BOOKING_BASE = "https://anc.ca.apm.activecommunities.com/aftoronto/activity/search/detail";
 const CM_CATEGORY_PTCF = 368;
-const CM_CATEGORY_ETCF = 367;
+const AC_API_BASE = "https://anc.ca.apm.activecommunities.com/aftoronto/rest/activities";
+const AC_CATEGORY_ETCF = "30";
 const CLOSED_STATUS = /full|on\s*hold|closed|cancel|wait\s*list|sold\s*out|not\s+(?:yet\s+)?open/i;
 
 // Identify the monitor honestly. On 2026-10-06 the old fixed Chrome/124 UA
@@ -155,6 +156,114 @@ async function fetchCmSessions(category: number, examType: ExamType): Promise<CM
   return data.items;
 }
 
+interface AcItem {
+  id: number;
+  name: string;
+  number: string;
+  parent_activity: boolean;
+  num_of_sub_activities: number;
+  sub_activity_ids: number[] | null;
+  urgent_message: { status_description: string };
+}
+
+function validateAcItems(items: unknown[], label: string): AcItem[] {
+  for (const item of items as AcItem[]) {
+    const ids = item?.sub_activity_ids;
+    if (!Number.isInteger(item?.id) || item.id <= 0 || typeof item.name !== "string"
+      || typeof item.number !== "string" || typeof item.parent_activity !== "boolean"
+      || !Number.isInteger(item.num_of_sub_activities) || item.num_of_sub_activities < 0
+      || typeof item.urgent_message?.status_description !== "string"
+      || !(ids === null || Array.isArray(ids))
+      || (ids ?? []).some(id => !Number.isInteger(id) || id <= 0)
+      || (ids ?? []).length !== item.num_of_sub_activities
+      || new Set(ids ?? []).size !== item.num_of_sub_activities
+      || (!item.parent_activity && item.num_of_sub_activities !== 0)) {
+      throw new Error(`${label}: malformed activity hierarchy; availability unknown`);
+    }
+    if (!/^[EP][-\s]*TCF\b/i.test(item.name)) {
+      throw new Error(`${label}: unrecognized TCF product; availability unknown`);
+    }
+  }
+  return items as AcItem[];
+}
+
+async function fetchAcPages(path: string, body: unknown, field: "activity_items" | "sub_activities", label: string): Promise<AcItem[]> {
+  const out: AcItem[] = [];
+  let totalPages = 1;
+  let totalRecords = 0;
+  for (let page = 1; page <= totalPages; page++) {
+    const json = await fetchJson<any>(`${AC_API_BASE}/${path}?locale=en-US`, `${label} page ${page}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        page_info: JSON.stringify({ order_by: "", page_number: page, total_records_per_page: 20 }),
+      },
+      body: JSON.stringify(body),
+    });
+    const items = json?.body?.[field];
+    const info = json?.headers?.page_info;
+    if (json?.headers?.response_code !== "0000" || !Array.isArray(items)
+      || !Number.isInteger(info?.total_page) || info.total_page < 1 || info.total_page > 50
+      || !Number.isInteger(info.total_records) || info.total_records < 0 || info.page_number !== page) {
+      throw new Error(`${label} page ${page}: invalid response or pagination; availability unknown`);
+    }
+    if (page > 1 && (info.total_page !== totalPages || info.total_records !== totalRecords)) {
+      throw new Error(`${label}: listing changed during pagination; availability unknown`);
+    }
+    totalPages = info.total_page;
+    totalRecords = info.total_records;
+    out.push(...validateAcItems(items, label));
+  }
+  if (out.length !== totalRecords || new Set(out.map(item => item.id)).size !== out.length) {
+    throw new Error(`${label}: incomplete or duplicate activities; availability unknown`);
+  }
+  return out;
+}
+
+async function discoverComputerActivities(): Promise<AcItem[]> {
+  const top = await fetchAcPages("list", {
+    activity_search_pattern: {
+      skills: [], time_after_str: "", days_of_week: null, activity_select_param: 2,
+      center_ids: [], time_before_str: "", open_spots: null, activity_id: null,
+      activity_category_ids: [AC_CATEGORY_ETCF], date_before: "", min_age: null, date_after: "",
+      activity_type_ids: [], site_ids: [], for_map: false, geographic_area_ids: [],
+      season_ids: [], activity_department_ids: [], activity_other_category_ids: [],
+      child_season_ids: [], activity_keyword: "", instructor_ids: [], max_age: null,
+      custom_price_from: "", custom_price_to: "",
+    },
+    activity_transfer_pattern: {},
+  }, "activity_items", "AC TCF list");
+  const computer = top.filter(item => /^E[-\s]*TCF\b/i.test(item.name));
+  const leaves: AcItem[] = [];
+  for (const item of computer) {
+    if (!item.parent_activity) { leaves.push(item); continue; }
+    // Follow children even when their parent says Full/On Hold. The parent is a
+    // navigation group, and its own space count is never a bookable candidate.
+    if (item.num_of_sub_activities === 0) continue;
+    const ids = item.sub_activity_ids!;
+    const children = await fetchAcPages(`subs/${item.id}`, {
+      sub_activity_ids: ids.join(","), activity_transfer_pattern: {}, open_spots: 0,
+    }, "sub_activities", `AC children of ${item.id}`);
+    if (children.length !== ids.length || children.some(child => !ids.includes(child.id)
+      || child.parent_activity || !/^E[-\s]*TCF\b/i.test(child.name))) {
+      throw new Error(`AC children of ${item.id}: incomplete or unexpected children; availability unknown`);
+    }
+    leaves.push(...children);
+  }
+  if (new Set(leaves.map(item => item.id)).size !== leaves.length) {
+    throw new Error("AC computer hierarchy contains duplicate child activities; availability unknown");
+  }
+  console.log(`[toronto:computer] ${computer.length} E-TCF top-level row(s), ${leaves.length} concrete activity/activities`);
+  return leaves;
+}
+
+function dateFromAcNumber(number: string): string | undefined {
+  const match = number.match(/TCFC(\d{2})(\d{2})(\d{2})/i);
+  if (!match) return undefined;
+  const date = `20${match[3]}-${match[2]}-${match[1]}`;
+  return validDate(date) ? date : undefined;
+}
+
 function validDate(value: unknown): value is string {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(`${value}T00:00:00Z`);
@@ -255,7 +364,10 @@ async function scrapeTorontoFormat(category: number, examType: ExamType, label: 
 }
 
 export async function scrapeTorontoComputer(): Promise<Slot[]> {
-  return scrapeTorontoFormat(CM_CATEGORY_ETCF, "E-TCF Canada", "computer");
+  const activities = await discoverComputerActivities();
+  return confirmCandidates(activities.filter(item => !CLOSED_STATUS.test(item.urgent_message.status_description)).map(item => ({
+    id: item.id, examType: "E-TCF Canada", date: dateFromAcNumber(item.number),
+  })));
 }
 
 export async function scrapeTorontoPaper(): Promise<Slot[]> {

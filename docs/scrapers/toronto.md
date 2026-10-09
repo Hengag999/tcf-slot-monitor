@@ -2,18 +2,18 @@
 
 | | |
 |---|---|
-| **Platform** | Alliance Française CM `/groupcourses`: category 367 for E-TCF and 368 for P-TCF, matching the official registration page. Both confirm concrete child activities against the AC detail API. |
+| **Platform** | E-TCF: Active Communities category 30, including every advertised child through its public `activities/subs/{id}` endpoint. P-TCF: official CM category 368. Positive candidates require concrete AC activity detail. |
 | **Diff strategy** | 0 → N per exam type. Computer and paper have separate scrape outcomes, sharing Toronto's existing DB city key and Discord destination. |
 | **Page** | [Official registration page](https://www.alliance-francaise.ca/en/exams/tests/informations-about-tcf-canada/tcf-canada) |
 | **Discord** | #toronto |
 | **DB keys** | city=`toronto`, exam_type=`E-TCF Canada` and `P-TCF Canada` |
-| **Status** | **Computer false positive confirmed and locally repaired 2026-10-09:** AC search exposed an October 16 parent aggregate with one opening, but its browser page had no sub-activities or enrollment action. The repaired official CM child discovery returns zero bookable computer and paper exams in a live standalone check. Production deployment and state correction are pending. The known intermittent paper challenge policy is unchanged. |
+| **Status** | **October 9 repair under production verification:** computer discovery now traverses the public AC parent/child hierarchy and excludes nonbookable parent aggregates. A live check found five parents, three concrete children, all Full, and zero bookable exams. This removes the CM computer dependency introduced by the first repair; paper and its challenge policy remain unchanged. |
 
 ## Current behavior
 
-- `scrapeTorontoComputer()` reads the official CM category 367 list. AC category 30 search is no longer a discovery source: it exposed parent aggregates that were not bookable and omitted real child activities advertised by the official site.
-- `scrapeTorontoPaper()` independently reads CM category 368. Both queries match the public site's filters and 300-row limit. The response must explicitly report page 1, the requested limit, and a total equal to the returned count, below 300. Missing/invalid metadata, duplicate IDs, wrong categories/formats, and records contradicting the requested status/open-space filters fail instead of becoming an empty snapshot.
-- Every candidate must have a matching AC detail ID, explicit `is_parent_activity=false`, and readable `space_status`. A parent aggregate is unknown bookability even if it advertises an opening, so it fails the source rather than producing a false alert. At most five detail requests run concurrently. Dates prefer the detail's `first_date`, falling back to the validated CM sitting date. Reported seat counts come from the confirmed AC detail, not potentially stale CM counts.
+- `scrapeTorontoComputer()` reads every page of AC category 30, separating E-TCF from P-TCF. Every E-TCF parent is traversed regardless of its own status. The public frontend's `activities/subs/{parentId}` call receives its advertised child IDs with `open_spots=0`. Child counts, IDs, formats, metadata, page counts, and uniqueness must all agree. Empty parents contribute no candidates. Incomplete traversal, nested/unexpected children, and failed requests invalidate the whole computer snapshot.
+- `scrapeTorontoPaper()` independently reads CM category 368 with the public site's filters and 300-row limit. The response must explicitly report page 1, the requested limit, and a total equal to the returned count, below 300. Missing/invalid metadata, duplicate IDs, wrong categories/formats, and records contradicting the requested status/open-space filters fail instead of becoming an empty snapshot. Paper discovery cannot be replaced with AC search because its hidden records are not covered there.
+- Explicitly closed computer child rows are not candidates. Every remaining computer candidate and every CM paper candidate must have a matching AC detail ID, explicit `is_parent_activity=false`, and readable `space_status`. Unexpected parent detail fails the source rather than producing a false alert. At most five detail requests run concurrently. Dates prefer detail `first_date`, falling back to the validated concrete AC activity number or CM sitting date. Reported seat counts come from confirmed AC detail.
 - The orchestrator calls these independently and restricts each snapshot to its own exam type. A failed paper source must preserve its previous row and must not prevent computer monitoring. Returning an unscoped partial Toronto array would be unsafe: missing exam types would otherwise be cleared by the orchestrator.
 - The retained `scrapeToronto()` aggregate rejects if either source fails. The standalone script uses both independent sources, prints each outcome and surviving results, and exits nonzero if coverage is incomplete.
 - Requests have a 20-second timeout and at most three attempts. Network failures, HTTP 429/5xx, and non-JSON responses are retried. Other HTTP errors such as 403 fail immediately. Requests identify themselves as `TCF-Slot-Monitor/1.0 (+https://github.com/Hengag999/tcf-slot-monitor)`; no cookies, clearance tokens, or browser runtime are required for the verified local result.
@@ -216,9 +216,9 @@ A bounded standalone check, with no database writes or Discord sends, observed:
   two October 23 child activities, **129585** and **129702**, each advertising one
   open space. Both independent AC details reported **Full**, so neither was a
   confirmed vacancy. This disagreement is concrete evidence against trusting CM
-  `open_spaces` alone. These IDs were absent from AC search; no missed bookable
-  activity was established by this comparison, and complete future agreement
-  between the two catalogues must not be assumed.
+  `open_spaces` alone. These IDs were absent from the top-level AC result rows;
+  the follow-up below established that both were advertised in those parents'
+  `sub_activity_ids`. The first inspection failed to follow that hierarchy.
 - **Paper:** the actual filtered request returned **HTTP 200 JSON, zero items**.
   The unfiltered category contained 44 records, including four future activities
   (**129194, 129197, 129199, 129201**) on October 23 and November 13. Each had zero
@@ -231,7 +231,7 @@ state changes were used. This is a dated successful source observation. The exis
 paper challenge alert policy remains unchanged, and unknown failures still preserve
 the previous snapshot and fail immediately.
 
-### Parent-activity false positive and repair — October 9
+### Parent-activity false positive and initial CM repair — October 9
 
 The browser cross-check resolved the limitation above: opening the purported
 October 16 booking URL for parent **129464** redirected to the public activity
@@ -240,14 +240,14 @@ action. The API's one remaining opening was therefore not a usable booking optio
 This was a confirmed false positive, despite successful scraper execution and a
 positive `space_status`. It does not establish how long the parent lacked children.
 
-Computer discovery now uses the official CM **367** feed and validates its actual
+The first repair used the official CM **367** feed and validated its actual
 child activities through AC detail. The public CM response's two positive-space
 children were both **Full** in AC. A live standalone check after the repair accepted
 the real CM metadata and returned **0 computer / 0 paper bookable slots**, with no
 database or Discord writes. A successful ordinary production run can consequently
 clear the stale parent snapshot; failed discovery or detail must preserve it.
 
-The new computer dependency is the same CM host already used by paper. If computer
+That introduced a computer dependency on the same CM host already used by paper. If computer
 CM access fails or receives a challenge, that source fails immediately under the
 existing policy. The one-hour grace and one-failure-per-outage rule remains scoped
 only to the recognized paper category-368 challenge; it was not broadened here.
@@ -257,5 +257,49 @@ fixture, the actual orchestrator configuration, parent rejection, valid child
 availability, incomplete/malformed response rejection, source isolation, and
 preserving the prior computer snapshot on request failure. The complete TypeScript
 check passed. The fixture contains only public exam fields and no student records,
-credentials, or headers. An actual newly bookable child and notification delivery
+credentials, or private HTTP headers. An actual newly bookable child and notification delivery
 remain to be observed; a mocked positive case is not production delivery evidence.
+
+### Follow-up: traverse the genuine public AC hierarchy — October 9
+
+The first production run on `4660c3b`, [37882682731](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37882682731),
+received the recognized SiteGround HTTP 202 response on the new computer CM
+request. Computer failed immediately and preserved its prior snapshot; paper was
+within its existing grace period. This exposed the practical access cost of the
+first repair. No broader grace policy or challenge workaround was introduced.
+
+The public booking app's JavaScript, `app.index.f8c1b1ed.js`, documents its genuine
+child-discovery flow: `POST /rest/activities/subs/{parentId}` with the parent's
+advertised `sub_activity_ids`, an empty transfer pattern, and `open_spots: 0`.
+The same client defines selection 2 as in-progress-or-future and selection 0 as
+future; these are date filters, not switches between parent and child records.
+
+A fresh public category-30 response contained five E-TCF parents. Three explicitly
+advertised one child each despite their parent status being On Hold:
+
+| Parent | Advertised and returned child | Child status |
+| --- | --- | --- |
+| 129582 | 129585 | Full |
+| 129586 | 129587 | Full |
+| 129700 | 129702 | Full |
+
+All three child calls returned successful envelopes with complete count/ID matches.
+This includes both computer candidates independently discovered on official CM367,
+plus one additional Full activity. Parents 129462 and 129464 advertised zero
+children; neither is a bookable candidate even if its aggregate reports space.
+The old code's error was skipping closed parents and treating an empty parent as
+an exam. The public child IDs were present in its response all along.
+
+The follow-up computer implementation uses this AC hierarchy directly, with no CM
+computer request or fallback. A live read-only standalone check accepted all five
+parents and three children and returned zero bookable computer activities. The
+scope is the current public computer catalogue; this does not prove completeness
+of the separate hidden paper catalogue. It also does not guarantee future booking
+success or treat a green workflow as evidence of a notification receipt.
+
+All **30 Toronto regression tests** and the complete TypeScript check passed.
+Coverage includes the real hierarchy fixture, actual orchestrator wiring, a closed
+parent with a bookable child, empty-parent exclusion, full pagination, missing or
+wrong child IDs, duplicates, failed subrequests, and preservation of prior state.
+Positive child availability remains an offline test until a real opening is
+observed. Production verification of this follow-up is recorded separately.

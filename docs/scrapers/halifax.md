@@ -7,7 +7,7 @@
 | API | `https://afhalifax.aec.app/api/v1/public/examinations/list/1/16` |
 | State | city `halifax`, exam type `TCF Canada` |
 | Alert policy | Zero-to-available; a switch to date diffs was proposed separately |
-| Status | Current source coverage verified October 9; stricter response validation pending deployment |
+| Status | Source coverage and stricter response validation verified in two production cycles October 9; 17 current bookable sittings |
 
 The official TCF page links the dedicated registration widget. Its published
 configuration uses branch 1, examination type 16, and no period filter. These
