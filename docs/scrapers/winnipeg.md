@@ -74,8 +74,48 @@ it did not explicitly state the timezone. This is not an exam sitting.
 All **124 offline tests**, typecheck, and whitespace checks passed before
 shipment. Tests cover the extracted real HTML, unknown/error/empty states,
 notification wording, and the real configured source's per-date deduplication.
-Production scheduled-run and Discord delivery evidence will be recorded below
-after deployment. No local live pipeline or extra manual production run is used.
+No local live pipeline or extra manual production run was used.
+
+## Production verification
+
+Commit `c8cda6f` added the source; `eadd799` made the missing-year caveat
+conditional so future explicitly dated listings remain accurately described.
+Automatic run [37878868996](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37878868996)
+was created at 11:21:06 China time on October 9. It passed 124 tests, typecheck,
+all 12 real sources, and the scoped database guard with zero forbidden
+privileges.
+
+Discord acknowledged message `1557956207556427819` at 03:21:49 UTC. Its three
+dates, published seat counts, official links, and registration caveat were
+verified in the actual existing BonTCF channel through the browser. A read-only
+query as `tcf_slot_monitor` at 03:23:41 UTC confirmed the same three slots and
+`checked_at = notified_at = 2026-10-09T03:21:49.454Z`.
+
+The next automatic run, [37879252714](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37879252714),
+started at 11:26:02 China time on `eadd799`. All 124 tests, typecheck, the
+scoped guard, and all 12 sources passed. Winnipeg reported `3 → 3`, with
+no repeat Discord send. The observed start interval was 4 minutes 56 seconds.
+The third automatic run, [37879655582](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37879655582),
+started at 11:31:18 China time, 5 minutes 16 seconds after the second. It also
+passed 124 tests, typecheck, the scoped guard with zero forbidden privileges,
+and all 12 sources. Winnipeg again reported `3 → 3` without a Discord send.
+
+| Run | Creation (China time, October 9) | Revision | Sources |
+|---|---|---|---|
+| 37878868996 | 11:21:06 | c8cda6f | 12/12 OK; first Winnipeg notification accepted |
+| 37879252714 | 11:26:02 | eadd799 | 12/12 OK; unchanged dates did not notify |
+| 37879655582 | 11:31:18 | eadd799 | 12/12 OK; unchanged dates did not notify |
+
+Final read-only verification at `2026-10-09T03:32:32.097Z` authenticated as
+`tcf_slot_monitor`: all **13 availability/reminder rows**, excluding health
+metadata, refreshed between `03:31:36.365Z` and `03:31:43.840Z`. Winnipeg held
+three slots with `checked_at=03:31:43.840Z` and its original
+`notified_at=03:21:49.454Z`. Toronto paper's separate health row recorded success
+at `03:31:36.614Z` with both incident markers null.
+
+The three-cycle steady-state check is complete. These observations establish
+current functioning and deduplication, not a guarantee against future source
+changes or a permanent fix for Toronto's intermittent upstream challenge.
 
 ## Read-only debugging
 
