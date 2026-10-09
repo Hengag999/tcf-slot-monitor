@@ -5,10 +5,11 @@ import { scrapeHalifax } from "./scrapers/halifax";
 import { scrapeOttawa } from "./scrapers/ottawa";
 import { scrapeAshton } from "./scrapers/ashton";
 import { scrapeNorthYork } from "./scrapers/northyork";
+import { scrapeWinnipeg, WINNIPEG_PAGE } from "./scrapers/winnipeg";
 import { bookableEdmontonSlots, scrapeEdmontonExams } from "./scrapers/edmonton";
 import { scrapeTcfListing, type ExamSelectorRow } from "../src/lib/examSelector";
 import { getPrevState, upsertState } from "../src/lib/db";
-import { notifyDiscord } from "../src/lib/discord";
+import { notifyDiscord, type PublishedAvailabilityStyle } from "../src/lib/discord";
 import { runRegistrationReminders, type RegistrationExam, type ReminderOptions } from "../src/lib/registrationReminders";
 import { recordPaperChallenge, recordPaperSuccess } from "../src/lib/torontoPaperHealth";
 
@@ -31,6 +32,7 @@ export interface CityConfig {
   label: string;
   scrape: () => Promise<MonitorSlot[]>;
   webhookEnv: string;
+  notificationStyle?: PublishedAvailabilityStyle;
   // When true, notify per newly-appeared date instead of only on 0→N
   diffByDate?: boolean;
   // When true, the city runs the registration-reminder engine instead of the
@@ -42,7 +44,7 @@ export interface CityConfig {
 
 const DRY_RUN = process.argv.includes("--dry-run");
 
-function createSources(): CityConfig[] {
+export function createSources(): CityConfig[] {
   // Cache only inside one run: both consumers must see the same complete listing.
   let bc: Promise<ExamSelectorRow[]> | undefined;
   let edmonton: Promise<ExamSelectorRow[]> | undefined;
@@ -60,6 +62,14 @@ function createSources(): CityConfig[] {
   { key: "victoria", label: "Victoria", scrape: async () => (await bcRows()).filter((row) => /victoria/i.test(row.location)), webhookEnv: "DISCORD_WEBHOOK_VICTORIA", reminderMode: true, zhLabel: "维多利亚" },
   { key: "edmonton", source: "availability", label: "Edmonton", scrape: async () => bookableEdmontonSlots(await edmontonRows()), examTypes: ["TCF Canada"], webhookEnv: "DISCORD_WEBHOOK_EDMONTON", diffByDate: true },
   { key: "edmonton", source: "registration", label: "Edmonton", scrape: edmontonRows, webhookEnv: "DISCORD_WEBHOOK_EDMONTON", reminderMode: true, zhLabel: "埃德蒙顿", reminderOptions: { futureOnly: true, examType: "TCF Canada registration reminders", timeZone: "America/Edmonton", timeZoneLabel: "埃德蒙顿时间" } },
+  {
+    key: "winnipeg", label: "Winnipeg · 温尼伯", scrape: scrapeWinnipeg,
+    examTypes: ["TCF Canada"], webhookEnv: "DISCORD_WEBHOOK_WINNIPEG", diffByDate: true,
+    notificationStyle: {
+      kind: "published-availability", sourceUrl: WINNIPEG_PAGE,
+      caveat: "官网未注明场次年份；请在报名时向考点确认。需提交报名表、付款并由考点确认，非即时锁位。",
+    },
+  },
   ];
 }
 
@@ -157,7 +167,7 @@ export async function processCity(
       } else {
         const webhookUrl = process.env[city.webhookEnv];
         if (webhookUrl) {
-          await io.notifyDiscord(webhookUrl, city.label, examType, slotsToNotify);
+          await io.notifyDiscord(webhookUrl, city.label, examType, slotsToNotify, city.notificationStyle);
           console.log(`  [${examType}] Discord accepted ${slotsToNotify.length} slot(s)`);
         } else {
           throw new Error(`${city.webhookEnv} missing; notification state was not advanced`);

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { processCity, runMonitor, type CityConfig, type MonitorDependencies } from "../scripts/scrape-slots";
+import { createSources, processCity, runMonitor, type CityConfig, type MonitorDependencies } from "../scripts/scrape-slots";
 import { TorontoPaperChallengeError } from "../scripts/scrapers/toronto";
 import { HEALTH_CITY, HEALTH_EXAM_TYPE } from "../src/lib/torontoPaperHealth";
 import type { StateRow } from "../src/lib/db";
@@ -67,6 +67,53 @@ test("notify failure does not stop subsequent source and does not persist failed
 test("dry-run avoids database and Discord I/O", async () => {
   const fail = async () => { throw new Error("unexpected external I/O"); };
   await runMonitor([computer], true, { getPrevState: fail, upsertState: fail, notifyDiscord: fail, runRegistrationReminders: fail });
+});
+
+test("configured Winnipeg source forwards its published-data style and alerts only for new dates", async () => {
+  const city = createSources().find(source => source.key === "winnipeg")!;
+  assert.ok(city);
+  assert.deepEqual(city.examTypes, ["TCF Canada"]);
+  assert.equal(city.diffByDate, true);
+  assert.equal(city.webhookEnv, "DISCORD_WEBHOOK_WINNIPEG");
+  assert.equal(city.notificationStyle?.kind, "published-availability");
+  const originalWebhook = process.env[city.webhookEnv];
+  process.env[city.webhookEnv] = "https://example.com/test-webhook";
+  const rows: StateRow[] = [];
+  const sent: Parameters<MonitorDependencies["notifyDiscord"]>[] = [];
+  const writes: { count: number; notified: boolean }[] = [];
+  const slots = [3, 4, 10].map(day => ({
+    id: `winnipeg-november-${day}`, date: `November ${day}`, examType: "TCF Canada",
+    bookingUrl: "https://www.afmanitoba.ca/en/exams/tcf/register-tcf-canada/", availableSeats: 1,
+  }));
+  const io: MonitorDependencies = {
+    getPrevState: async key => structuredClone(rows.filter(row => row.city === key)),
+    upsertState: async (key, examType, snapshot, notified) => {
+      assert.equal(key, "winnipeg");
+      assert.equal(examType, "TCF Canada");
+      rows.splice(0, rows.length, { city: key, exam_type: examType, slots: structuredClone(snapshot) });
+      writes.push({ count: snapshot.length, notified });
+    },
+    notifyDiscord: async (...args) => { sent.push(structuredClone(args)); },
+    runRegistrationReminders: async () => assert.fail("Winnipeg uses published availability, not registration reminders"),
+  };
+  try {
+    await processCity(city, [], false, io); // First empty snapshot still proves freshness.
+    await processCity(city, slots, false, io);
+    await processCity(city, slots.map(slot => ({ ...slot, availableSeats: 2 })), false, io);
+    const extra = { ...slots[0], id: "winnipeg-november-12", date: "November 12" };
+    await processCity(city, [...slots, extra], false, io);
+    await processCity(city, [...slots, extra], false, io);
+    assert.deepEqual(sent.map(args => args[3].map(slot => slot.date)), [["November 3", "November 4", "November 10"], ["November 12"]]);
+    assert.ok(sent.every(args => args[0] === "https://example.com/test-webhook" && args[1] === city.label && args[2] === "TCF Canada"));
+    assert.ok(sent.every(args => JSON.stringify(args[4]) === JSON.stringify(city.notificationStyle)));
+    assert.deepEqual(writes, [
+      { count: 0, notified: false }, { count: 3, notified: true }, { count: 3, notified: false },
+      { count: 4, notified: true }, { count: 4, notified: false },
+    ]);
+  } finally {
+    if (originalWebhook === undefined) delete process.env[city.webhookEnv];
+    else process.env[city.webhookEnv] = originalWebhook;
+  }
 });
 
 const t0 = Date.parse("2026-10-07T00:00:00Z");

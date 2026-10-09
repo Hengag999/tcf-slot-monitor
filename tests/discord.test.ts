@@ -1,10 +1,45 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { postDiscord } from "../src/lib/discord";
+import { postDiscord, formatSlotNotification, notifyDiscord, type PublishedAvailabilityStyle } from "../src/lib/discord";
 
 const content = "@everyone\n" + ["a", "b", "c"].map(c => c.repeat(1800)).join("\n");
 const accepted = (headers = {}) => new Response(JSON.stringify({ id: "1557016902994501632" }), { status: 200, headers });
 const limited = (body: string, headers = {}) => new Response(body, { status: 429, headers });
+
+test("ordinary availability messages retain their existing wording and unique booking links", () => {
+  const url = "https://example.com/booking";
+  const message = formatSlotNotification("Toronto", "TCF Canada", [
+    { date: "November 3", bookingUrl: url, availableSeats: 2, startTime: "09:00", endTime: "12:00" },
+    { date: "November 4", bookingUrl: url },
+  ]);
+  assert.equal(message, [
+    "@everyone 🗓️ **Toronto** 新开放 **TCF Canada** 考位，手慢无！", "",
+    "📅 November 3 09:00–12:00 · 剩 2 个名额", "📅 November 4", "",
+    `👉 立即报名：${url}`,
+  ].join("\n"));
+});
+
+test("published availability notifications identify the source and limits through the real sender", async t => {
+  const style: PublishedAvailabilityStyle = {
+    kind: "published-availability", sourceUrl: "https://www.afmanitoba.ca/en/exams/tcf/",
+    caveat: "官网未注明场次年份；请在报名时向考点确认。需提交报名表、付款并由考点确认，非即时锁位。",
+  };
+  const bookingUrl = "https://www.afmanitoba.ca/en/exams/tcf/register-tcf-canada/";
+  const sent: string[] = [];
+  t.mock.method(globalThis, "fetch", async (_url: unknown, init?: RequestInit) => {
+    sent.push(JSON.parse(String(init?.body)).content);
+    return accepted();
+  });
+  await notifyDiscord("https://example.com/webhook", "Winnipeg · 温尼伯", "TCF Canada", [
+    { date: "November 3", bookingUrl, availableSeats: 1 },
+  ], style);
+  assert.deepEqual(sent, [[
+    "@everyone 🗓️ **Winnipeg · 温尼伯** **TCF Canada** 官网公布余位", "",
+    "📅 November 3 · 官网公布 1 个名额", "",
+    `🔎 官网场次信息：${style.sourceUrl}`, `📝 报名表：${bookingUrl}`, "", style.caveat,
+  ].join("\n")]);
+  assert.doesNotMatch(sent[0], /新开放|手慢无|立即报名/);
+});
 
 test("mid-batch 429 retries only the rejected chunk and keeps one accepted mention", async () => {
   const sent: string[] = [];

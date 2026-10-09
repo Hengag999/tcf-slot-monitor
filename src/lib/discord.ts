@@ -6,30 +6,51 @@ interface SlotInfo {
   availableSeats?: number;
 }
 
+export interface PublishedAvailabilityStyle {
+  kind: "published-availability";
+  sourceUrl: string;
+  caveat: string;
+}
+
+export function formatSlotNotification(
+  cityLabel: string,
+  examType: string,
+  slots: SlotInfo[],
+  style?: PublishedAvailabilityStyle,
+): string {
+  const published = style?.kind === "published-availability";
+  const slotLines = slots.map((s) => {
+    const time = s.startTime && s.endTime ? ` ${s.startTime}–${s.endTime}` : "";
+    const seats = s.availableSeats != null
+      ? published ? ` · 官网公布 ${s.availableSeats} 个名额` : ` · 剩 ${s.availableSeats} 个名额`
+      : "";
+    return `📅 ${s.date}${time}${seats}`;
+  });
+
+  const urls = [...new Set(slots.map((s) => s.bookingUrl))];
+  const urlLines = urls.map((u) => published ? `📝 报名表：${u}` : `👉 立即报名：${u}`);
+
+  return [
+    published
+      ? `@everyone 🗓️ **${cityLabel}** **${examType}** 官网公布余位`
+      : `@everyone 🗓️ **${cityLabel}** 新开放 **${examType}** 考位，手慢无！`,
+    "",
+    ...slotLines,
+    "",
+    ...(published ? [`🔎 官网场次信息：${style.sourceUrl}`] : []),
+    ...urlLines,
+    ...(published ? ["", style.caveat] : []),
+  ].join("\n");
+}
+
 export async function notifyDiscord(
   webhookUrl: string,
   cityLabel: string,
   examType: string,
   slots: SlotInfo[],
+  style?: PublishedAvailabilityStyle,
 ): Promise<void> {
-  const slotLines = slots.map((s) => {
-    const time = s.startTime && s.endTime ? ` ${s.startTime}–${s.endTime}` : "";
-    const seats = s.availableSeats != null ? ` · 剩 ${s.availableSeats} 个名额` : "";
-    return `📅 ${s.date}${time}${seats}`;
-  });
-
-  const urls = [...new Set(slots.map((s) => s.bookingUrl))];
-  const urlLines = urls.map((u) => `👉 立即报名：${u}`);
-
-  const content = [
-    `@everyone 🗓️ **${cityLabel}** 新开放 **${examType}** 考位，手慢无！`,
-    "",
-    ...slotLines,
-    "",
-    ...urlLines,
-  ].join("\n");
-
-  await postDiscord(webhookUrl, content);
+  await postDiscord(webhookUrl, formatSlotNotification(cityLabel, examType, slots, style));
 }
 
 // Discord caps a webhook message's `content` at 2000 characters and rejects
