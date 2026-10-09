@@ -7,7 +7,7 @@
 | **Page(s)** | `https://www.afvictoria.ca/language/exams/tcf/` (all pages; Victoria location required) |
 | **Discord** | #victoria (bot "BonTCF Victoria Bot") |
 | **DB key** | city=`victoria`, exam_type=`TCF Canada` (the `slots` JSONB holds reminder tracking, not slots) |
-| **Status** | Source coverage defect confirmed 2026-10-09; correction under verification (see latest incident) |
+| **Status** | Source correction deployed 2026-10-09; real reminder delivery, persistence, and repeat suppression verified |
 
 ## How it works
 - Victoria has its own [official TCF booking page](https://www.afvictoria.ca/language/exams/tcf/).
@@ -128,10 +128,40 @@ Discord settings still showed one existing webhook, **BonTCF Victoria Bot**,
 posting to `#victoria`, created April 19. The encrypted GitHub secret was present
 with that date. This metadata check did not send a test message or independently
 prove the secret's delivery; the next normal scheduled notification will do so.
-No credential, database grant, scheduler, or channel permission changes are
-required. Production verification follows after the source correction ships.
+No credential, database grant, scheduler, or channel permission changes were
+required.
 
 The correction passed **129 offline tests**, TypeScript checking, and whitespace
 validation. Regression fixtures cover both real pages, the actual orchestrator
 source URL, four upcoming reminders, 23 silent baselines, repeat suppression,
 and failures that must preserve the previous snapshot.
+
+### Production verification — October 9
+
+Commit `b869ffe` switched the production source to Victoria's own calendar.
+The normal timer-created [run 37880785744](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37880785744)
+started at **03:46:11 UTC / 11:46:11 China time**. It passed 129 tests,
+typecheck, and the scoped database guard with zero forbidden privileges.
+Victoria tracked 27 rows and Discord accepted all four due reminders in
+one [message](https://discord.com/channels/1484038585907810535/1495289361342791780/1557962483019550740).
+The message was independently read in the logged-in browser, timestamped
+`2026-10-09T03:46:41.495Z`, with the four December dates, correct official URL,
+and October 20 at 15:00 Victoria registration time.
+
+A read-only database check at `03:47:35.922Z`, authenticated as
+`tcf_slot_monitor`, confirmed **27 tracking entries**: four with `new` consumed
+and 23 silent baselines. Both `checked_at` and `notified_at` advanced to
+`03:46:43.345Z` after delivery. Eleven sources passed; Toronto paper encountered
+its known challenge five minutes after its preceding success, within the
+approved grace period, and preserved its availability snapshot.
+
+The following automatic [run 37881152902](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/37881152902)
+started at **03:51:05 UTC**, 4 minutes 54 seconds after the first. It passed all
+129 tests, typecheck, the scoped guard (zero forbidden privileges), and all
+**12 source checks**, including a recovered Toronto paper check. Victoria again
+tracked **27 records with zero reminders**. A read-only query at `03:52:15.604Z`
+confirmed `checked_at=03:51:40.229Z` while `notified_at` remained
+`03:46:43.345Z`; the same four `new` markers and 23 silent baselines remained.
+This verifies real delivery, persistence, and repeat suppression on the deployed
+source. No manual dispatch or local production run was used. Recovery of
+Toronto on this cycle does not imply a permanent repair to its upstream challenge.
