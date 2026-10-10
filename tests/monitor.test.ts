@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createSources, processCity, runMonitor, type CityConfig, type MonitorDependencies } from "../scripts/scrape-slots";
 import { TorontoPaperChallengeError } from "../scripts/scrapers/toronto";
+import { parseWinnipeg } from "../scripts/scrapers/winnipeg";
 import { HEALTH_CITY, HEALTH_EXAM_TYPE } from "../src/lib/torontoPaperHealth";
 import type { StateRow } from "../src/lib/db";
 
@@ -113,6 +114,45 @@ test("configured Winnipeg source forwards its published-data style and alerts on
   } finally {
     if (originalWebhook === undefined) delete process.env[city.webhookEnv];
     else process.env[city.webhookEnv] = originalWebhook;
+  }
+});
+
+test("Winnipeg layout recovery announces only the added date and preserves state on a later unknown page", async () => {
+  const [oldHtml, newHtml] = await Promise.all([
+    readFile(new URL("./fixtures/winnipeg-published-dates-2026-10-10.html", import.meta.url), "utf8"),
+    readFile(new URL("./fixtures/winnipeg-paragraph-dates-2026-10-11.html", import.meta.url), "utf8"),
+  ]);
+  let html = newHtml;
+  const configured = createSources().find(source => source.key === "winnipeg")!;
+  const source = { ...configured, scrape: async () => parseWinnipeg(html) };
+  const originalWebhook = process.env[source.webhookEnv];
+  process.env[source.webhookEnv] = "https://example.com/test-webhook";
+  let rows: StateRow[] = [{ city: "winnipeg", exam_type: "TCF Canada", slots: parseWinnipeg(oldHtml) }];
+  const notifiedDates: string[][] = [];
+  const writes: boolean[] = [];
+  const io: MonitorDependencies = {
+    getPrevState: async () => structuredClone(rows),
+    upsertState: async (city, exam_type, slots, notified) => {
+      rows = [{ city, exam_type, slots: structuredClone(slots) }];
+      writes.push(notified);
+    },
+    notifyDiscord: async (_webhook, _label, _examType, slots) => { notifiedDates.push(slots.map(slot => slot.date)); },
+    runRegistrationReminders: async () => assert.fail("not a reminder source"),
+  };
+  try {
+    await runMonitor([source], false, io);
+    await runMonitor([source], false, io);
+    assert.deepEqual(notifiedDates, [["October 20"]]);
+    assert.deepEqual(writes, [true, false]);
+    assert.deepEqual(rows[0].slots, parseWinnipeg(newHtml));
+    html = newHtml.replace("spots available!", "Waitlist only!");
+    await assert.rejects(runMonitor([source], false, io), /winnipeg \(scrape\)/);
+    assert.deepEqual(writes, [true, false]);
+    assert.deepEqual(rows[0].slots, parseWinnipeg(newHtml));
+    assert.deepEqual(notifiedDates, [["October 20"]]);
+  } finally {
+    if (originalWebhook === undefined) delete process.env[source.webhookEnv];
+    else process.env[source.webhookEnv] = originalWebhook;
   }
 });
 

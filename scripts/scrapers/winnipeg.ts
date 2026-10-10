@@ -72,26 +72,24 @@ function parseSession(value: string): { date: string; seats: number } {
 }
 
 function publishedDatesWithoutCounts(rest: string): Slot[] {
-  // Observed October 10: the centre replaced counted session headings and the
-  // next-announcement block with a positive availability banner and a <br> list.
-  // The exact disclaimer within that list is its boundary, not section end.
-  const headings = [...rest.matchAll(/<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1\s*>/gi)];
-  if (headings.length !== 2 || headings.some(heading => heading[1] !== "3")
-    || !/^New dates:\s*spots available!$/i.test(text(headings[0][2]))) {
+  // The centre formats the same positive announcement as headings with <br>
+  // or individual paragraphs. Source-code whitespace is not a date boundary;
+  // rendered block boundaries are. Inline emphasis must not split a date.
+  const lines = rest.replace(/\s+/g, " ")
+    .replace(/<\/?(?:h[1-6]|p|div|li|ol|ul)\b[^>]*>|<br\b[^>]*>/gi, "\n")
+    .split("\n").map(text).filter(Boolean);
+  const prefix = /^NO MU(?:L)?TIPLE REGISTRATIONS FOR THE SAME CANDIDATE!\s+New dates:\s*spots available!$/i;
+  const bannerEnd = lines.findIndex((_line, index) => prefix.test(lines.slice(0, index + 1).join(" ")));
+  if (bannerEnd < 0) {
     throw new Error("Winnipeg: Next sessions boundary missing or unrecognized availability list; state must be preserved");
   }
-  const lines = headings[1][2].split(/<br\s*\/?\s*>/gi).map(text).filter(Boolean);
   const disclaimer = "No refund or deferment is possible. Cancellations for climatic or personal reasons are not possible.";
   const boundaries = lines.flatMap((line, index) => line === disclaimer ? [index] : []);
-  if (boundaries.length !== 1 || boundaries[0] === 0
+  if (boundaries.length !== 1 || boundaries[0] <= bannerEnd + 1
     || !/^Registration(?: Registration)?$/.test(lines.slice(boundaries[0] + 1).join(" "))) {
     throw new Error("Winnipeg: published dates disclaimer or registration boundary changed; state must be preserved");
   }
-  const remainder = rest.replace(/<h([1-6])\b[^>]*>[\s\S]*?<\/h\1\s*>/gi, "");
-  if (!/^NO MU(?:L)?TIPLE REGISTRATIONS FOR THE SAME CANDIDATE!$/i.test(text(remainder))) {
-    throw new Error("Winnipeg: unrecognized content surrounding published dates; state must be preserved");
-  }
-  const dates = lines.slice(0, boundaries[0]).map(parseDate);
+  const dates = lines.slice(bannerEnd + 1, boundaries[0]).map(parseDate);
   if (new Set(dates).size !== dates.length) throw new Error("Winnipeg: duplicate session date is ambiguous");
   return dates.map(date => ({
     id: `winnipeg-${date.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,

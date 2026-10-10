@@ -25,9 +25,11 @@ timeout, and redirects disabled. It requires TCF Canada page context, one
 Positive, explicit seat counts in the original session headings become slots.
 The October 10 variant instead publishes a positive `New dates: spots available!`
 banner followed by a line-separated date list; those slots omit `availableSeats`
-because the centre gives no numeric counts. This variant requires the observed
-two-heading structure, exact refund disclaimer as the list boundary, and the
-same validated registration link. Bare dates without that positive context
+because the centre gives no numeric counts. Since October 11, this branch follows
+semantic text lines rather than requiring two heading elements: headings,
+paragraphs, lists, containers, and `<br>` can delimit dates. It still requires the
+anchored notice and positive banner, exact refund disclaimer as the list boundary,
+and the same validated registration link. Bare dates without that positive context
 remain unknown and throw. The next-announcement date, when present, is outside
 the original session boundary and is never treated as an exam date or reminder.
 

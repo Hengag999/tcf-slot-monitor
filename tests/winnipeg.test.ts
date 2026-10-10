@@ -6,6 +6,7 @@ import { formatSlotNotification } from "../src/lib/discord";
 
 const observed = readFileSync(new URL("./fixtures/winnipeg-next-sessions.html", import.meta.url), "utf8");
 const publishedDates = readFileSync(new URL("./fixtures/winnipeg-published-dates-2026-10-10.html", import.meta.url), "utf8");
+const paragraphDates = readFileSync(new URL("./fixtures/winnipeg-paragraph-dates-2026-10-11.html", import.meta.url), "utf8");
 const page = (sessions: string, options: { context?: string; registration?: string; boundary?: string } = {}) =>
   `<h2>${options.context ?? "TCF CANADA"}</h2><section><h2>Next sessions</h2>${sessions}`
   + `<h2>${options.boundary ?? "Next dates will be announced on"}</h2><h2>October 09, 2026 at 5 PM</h2>`
@@ -71,6 +72,47 @@ test("Winnipeg's uncounted date list rejects impossible or duplicate dates and h
 test("Winnipeg's bounded public scraper accepts the captured changed layout", async () => {
   const slots = await scrapeWinnipeg({ fetchImpl: async () => htmlResponse(publishedDates) });
   assert.equal(slots.length, 8);
+});
+
+test("Winnipeg reads the October 11 paragraph layout and preserves the prior eight date identities", async () => {
+  const slots = await scrapeWinnipeg({ fetchImpl: async () => htmlResponse(paragraphDates) });
+  assert.deepEqual(slots.map(slot => slot.date), ["October 20", "November 19", "November 23", "November 24", "November 25", "November 27", "December 1", "December 2", "December 4"]);
+  assert.deepEqual(slots.slice(1), parseWinnipeg(publishedDates));
+  assert.ok(slots.every(slot => !Object.hasOwn(slot, "availableSeats") && !/20\d\d/.test(slot.date)));
+});
+
+test("Winnipeg date-only availability is independent of block formatting and source whitespace", () => {
+  const expected = parseWinnipeg(paragraphDates);
+  for (const html of [
+    paragraphDates.replace(/<p>/g, "<h4>").replace(/<\/p>/g, "</h4>"),
+    paragraphDates.replace(/<p>/g, "<div>").replace(/<\/p>/g, "</div>"),
+    paragraphDates.replace(/<p>/g, "<li>").replace(/<\/p>/g, "</li>"),
+    paragraphDates.replace(/<p>|<\/p>/g, "<br>"),
+    paragraphDates.replace(/\s+/g, " "),
+    paragraphDates.replace("Oct.20", "<em>Oct.</em>\n<strong>20</strong>")
+      .replace("<strong>New dates:</strong><br />", "<strong>New dates:</strong>"),
+  ]) assert.deepEqual(parseWinnipeg(html), expected);
+});
+
+test("Winnipeg paragraph layout still rejects unknown, contradictory, hidden and incomplete evidence", () => {
+  const variants = [
+    paragraphDates.replace("spots available!", "No spots available!"),
+    paragraphDates.replace("spots available!", "spots available soon!"),
+    paragraphDates.replace("Oct.20", "Oct.20 (full)"),
+    paragraphDates.replace("Oct.20", "Oct.20<br>Waitlist only"),
+    paragraphDates.replace("Oct.20", "Nov.19"),
+    paragraphDates.replace("Oct.20", "Oct.32"),
+    paragraphDates.replace('<span style="color: #6f205d;">Oct.20', '<span hidden style="color: #6f205d;">Oct.20'),
+    paragraphDates.replace("<p></p>", "<p>Another unpublished date exists</p>"),
+    paragraphDates.replace("Cancellations for climatic or personal reasons are not possible.", ""),
+    paragraphDates.replace("<a class=", '<a aria-disabled="true" class='),
+    paragraphDates.replace(WINNIPEG_REGISTRATION, "https://other.example/register"),
+    paragraphDates.replace(/<p><strong><span[^>]*>[\s\S]*?<\/p>/g, ""),
+  ];
+  for (const html of variants) {
+    assert.notEqual(html, paragraphDates, "negative fixture mutation must take effect");
+    assert.throws(() => parseWinnipeg(html), /Winnipeg:/);
+  }
 });
 
 test("Winnipeg preserves state for explicitly hidden sections, banners, dates, or registration links", () => {
