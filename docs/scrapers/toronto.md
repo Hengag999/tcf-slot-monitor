@@ -7,11 +7,11 @@
 | **Page** | [Official registration page](https://www.alliance-francaise.ca/en/exams/tests/informations-about-tcf-canada/tcf-canada) |
 | **Discord** | #toronto |
 | **DB keys** | city=`toronto`, exam_type=`E-TCF Canada` and `P-TCF Canada` |
-| **Status** | **October 9 production verification complete:** computer traverses the public AC parent/child hierarchy and excludes nonbookable parent aggregates. Two final scheduled runs verified five parents, three Full children, and zero bookable exams without CM computer access. Paper succeeded on the first and hit its accepted challenge grace on the second; its policy remains unchanged. |
+| **Status** | **October 10 hierarchy regression reproduced and locally repaired:** AC now advertises a child count while omitting the child ID list for parent 129464. Public child discovery recovers concrete activity 129465, October 16, with one opening. The corrected full standalone returns four parents, four concrete activities, and one bookable child. Deployment verification is pending; paper and its challenge policy are unchanged. |
 
 ## Current behavior
 
-- `scrapeTorontoComputer()` reads every page of AC category 30, separating E-TCF from P-TCF. Every E-TCF parent is traversed regardless of its own status. The public frontend's `activities/subs/{parentId}` call receives its advertised child IDs with `open_spots=0`. Child counts, IDs, formats, metadata, page counts, and uniqueness must all agree. Empty parents contribute no candidates. Incomplete traversal, nested/unexpected children, and failed requests invalidate the whole computer snapshot.
+- `scrapeTorontoComputer()` reads every page of AC category 30, separating E-TCF from P-TCF. Every E-TCF parent is traversed regardless of its own status. The public frontend's `activities/subs/{parentId}` call receives its advertised child IDs with `open_spots=0`. If the source explicitly supplies `sub_activity_ids: null`, it sends an empty ID string, as the public frontend does, and verifies the returned children against the advertised count. Supplied ID lists must match exactly; an empty array with a positive count and missing/undefined metadata remain invalid. Child counts, formats, metadata, page counts, and uniqueness must all agree. Empty parents contribute no candidates. Incomplete traversal, nested/unexpected children, and failed requests invalidate the whole computer snapshot.
 - `scrapeTorontoPaper()` independently reads CM category 368 with the public site's filters and 300-row limit. The response must explicitly report page 1, the requested limit, and a total equal to the returned count, below 300. Missing/invalid metadata, duplicate IDs, wrong categories/formats, and records contradicting the requested status/open-space filters fail instead of becoming an empty snapshot. Paper discovery cannot be replaced with AC search because its hidden records are not covered there.
 - Explicitly closed computer child rows are not candidates. Every remaining computer candidate and every CM paper candidate must have a matching AC detail ID, explicit `is_parent_activity=false`, and readable `space_status`. Unexpected parent detail fails the source rather than producing a false alert. At most five detail requests run concurrently. Dates prefer detail `first_date`, falling back to the validated concrete AC activity number or CM sitting date. Reported seat counts come from confirmed AC detail.
 - The orchestrator calls these independently and restricts each snapshot to its own exam type. A failed paper source must preserve its previous row and must not prevent computer monitoring. Returning an unscoped partial Toronto array would be unsafe: missing exam types would otherwise be cleared by the orchestrator.
@@ -303,3 +303,37 @@ parent with a bookable child, empty-parent exclusion, full pagination, missing o
 wrong child IDs, duplicates, failed subrequests, and preservation of prior state.
 Positive child availability remains an offline test until a real opening is
 observed. Production verification of this follow-up is recorded separately.
+
+## October 10 incident — advertised children without an ID list
+
+[Run 38018467059](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/38018467059)
+failed with `AC TCF list: malformed activity hierarchy; availability unknown`.
+A fresh public response reproduced the exact cause: parent **129464** reported
+`parent_activity: true`, `num_of_sub_activities: 1`, but `sub_activity_ids: null`.
+The October 9 guard incorrectly required an explicit ID list for every positive
+child count. Its rejection preserved the previous snapshot but prevented valid
+new availability from being observed.
+
+The public frontend already supports this response. It converts a null ID list
+into an empty string when calling `/activities/subs/129464`. The same read-only
+call returned one concrete child, **129465**, with an Enroll Now action. Independent
+AC detail confirmed `is_parent_activity: false`, **October 16, 2026**, and **one
+opening remaining**. The browser independently confirmed the child page and the
+10:00–17:00 sitting. This differs from the October 9 observation when the parent
+advertised zero children; the parent itself still must never be treated as an exam.
+
+The repair allows this explicit-null discovery case, requires every returned child
+page, and compares the final unique child count to the parent's advertised count.
+When IDs are supplied, their exact set is still required. Missing metadata, empty
+arrays with positive counts, wrong formats, duplicate or nested children, count
+mismatches, and failed requests remain unknown snapshots and preserve state.
+
+A repaired public standalone check returned **four E-TCF parents, four concrete
+activities, and one bookable child: 129465 on October 16**. No database writes,
+Discord posts, enrollment requests, CM requests, or challenge handling changes were
+used. All **34 Toronto tests** passed, along with the full TypeScript check. The
+new sanitized fixture records the real public parent, child-list response and
+child detail; tests cover actual orchestrator wiring, complete pagination, negative
+hierarchy cases, and snapshot preservation. Independent code review found no
+blocking issues. Production delivery and state recovery remain to be verified by
+an ordinary scheduled run.

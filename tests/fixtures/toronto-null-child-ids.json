@@ -1,0 +1,78 @@
+{
+  "observedDate": "2026-10-10",
+  "parent": {
+    "id": 129464,
+    "name": "E-TCF CANADA - 4 modules",
+    "number": "TCFC161026-MS",
+    "parent_activity": true,
+    "num_of_sub_activities": 1,
+    "sub_activity_ids": null,
+    "urgent_message": {
+      "group_id": 0,
+      "status_description": "",
+      "no_urgency_status_description": null
+    },
+    "action_link": {
+      "href": "https://ca.apm.activecommunities.com/aftoronto/Activity_Search/e-tcf-canada---4-modules/129464?locale=en-US",
+      "title": "",
+      "label": "More (1)",
+      "type": 6,
+      "unit": "",
+      "show_all_inclusive_pricing": false,
+      "enable_all_inclusive_pricing": false
+    }
+  },
+  "childrenResponse": {
+    "headers": {
+      "response_code": "0000",
+      "page_info": {
+        "order_by": "",
+        "order_option": "ASC",
+        "total_page": 1,
+        "total_records_per_page": 1,
+        "total_records": 1,
+        "page_number": 1
+      }
+    },
+    "body": {
+      "sub_activities": [
+        {
+          "id": 129465,
+          "name": "E-TCF CANADA - 4 modules",
+          "number": "SCTCFC161026-MS",
+          "parent_activity": false,
+          "num_of_sub_activities": 0,
+          "sub_activity_ids": null,
+          "urgent_message": {
+            "group_id": 1,
+            "status_description": "1 space(s) left",
+            "no_urgency_status_description": null
+          },
+          "action_link": {
+            "href": "https://anc.ca.apm.activecommunities.com/aftoronto/activity/search/enroll/129465?locale=en-US",
+            "title": "",
+            "label": "Enroll Now",
+            "type": 3,
+            "unit": "",
+            "show_all_inclusive_pricing": false,
+            "enable_all_inclusive_pricing": false
+          }
+        }
+      ]
+    }
+  },
+  "detailResponse": {
+    "headers": {
+      "response_code": "0000"
+    },
+    "body": {
+      "detail": {
+        "activity_id": 129465,
+        "activity_name": "E-TCF CANADA - 4 modules",
+        "is_parent_activity": false,
+        "first_date": "2026-10-16",
+        "space_status": "1 opening remaining"
+      }
+    }
+  }
+}

@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { parseWinnipeg, scrapeWinnipeg, WINNIPEG_PAGE, WINNIPEG_REGISTRATION } from "../scripts/scrapers/winnipeg";
+import { formatSlotNotification } from "../src/lib/discord";
 
 const observed = readFileSync(new URL("./fixtures/winnipeg-next-sessions.html", import.meta.url), "utf8");
+const publishedDates = readFileSync(new URL("./fixtures/winnipeg-published-dates-2026-10-10.html", import.meta.url), "utf8");
 const page = (sessions: string, options: { context?: string; registration?: string; boundary?: string } = {}) =>
   `<h2>${options.context ?? "TCF CANADA"}</h2><section><h2>Next sessions</h2>${sessions}`
   + `<h2>${options.boundary ?? "Next dates will be announced on"}</h2><h2>October 09, 2026 at 5 PM</h2>`
@@ -17,6 +19,81 @@ test("Winnipeg reads all three observed published sessions without inventing a s
   assert.ok(slots.every(slot => slot.examType === "TCF Canada" && slot.bookingUrl === WINNIPEG_REGISTRATION));
   assert.equal(new Set(slots.map(slot => slot.id)).size, 3);
   assert.ok(slots.every(slot => !slot.date.includes("2026") && !slot.date.includes("October")));
+});
+
+test("Winnipeg reads the October 10 positive availability list without inventing years or seat counts", () => {
+  const slots = parseWinnipeg(publishedDates);
+  assert.deepEqual(slots.map(slot => slot.date), ["November 19", "November 23", "November 24", "November 25", "November 27", "December 1", "December 2", "December 4"]);
+  assert.ok(slots.every(slot => slot.examType === "TCF Canada" && slot.bookingUrl === WINNIPEG_REGISTRATION));
+  assert.ok(slots.every(slot => !Object.hasOwn(slot, "availableSeats") && !/20\d\d/.test(slot.date)));
+  assert.equal(new Set(slots.map(slot => slot.id)).size, 8);
+  const message = formatSlotNotification("Winnipeg · 温尼伯", "TCF Canada", slots, {
+    kind: "published-availability", sourceUrl: WINNIPEG_PAGE,
+    caveat: "未注明年份的场次，请在报名时向考点确认。需提交报名表、付款并由考点确认，非即时锁位。",
+  });
+  assert.match(message, /官网公布余位/);
+  assert.match(message, /November 19/);
+  assert.match(message, /December 4/);
+  assert.doesNotMatch(message, /个名额|undefined|2026/);
+});
+
+test("Winnipeg's uncounted date list requires positive availability and exact bounded context", () => {
+  const changed = [
+    publishedDates.replace("spots available!", "No spots available!"),
+    publishedDates.replace("spots available!", "spots available soon!"),
+    publishedDates.replace("New dates:", "Future dates:"),
+    publishedDates.replace("No</span>\n                    refund", "No</span>\n                    changes or refund"),
+    publishedDates.replace("Cancellations for climatic or personal reasons are not possible.", ""),
+    publishedDates.replace("Cancellations for climatic or personal reasons are not possible.", "Cancellations for climatic or personal reasons are not possible.<br>No refund or deferment is possible. Cancellations for climatic or personal reasons are not possible."),
+    publishedDates.replace("Nov.19", "Nov.19<br>Waitlist only"),
+    publishedDates.replace("<p></p>", "<p>Another unpublished date exists</p>"),
+    publishedDates.replace("<p></p>", "<h3>Jan.01</h3>"),
+    publishedDates.replace(WINNIPEG_REGISTRATION, "https://other.example/register"),
+  ];
+  for (const html of changed) {
+    assert.notEqual(html, publishedDates, "negative fixture mutation must take effect");
+    assert.throws(() => parseWinnipeg(html), /Winnipeg:/);
+  }
+  // The old counted-date branch must not start accepting unexplained bare dates.
+  assert.throws(() => parseWinnipeg(page(session("Nov. 19"))), /Winnipeg:/);
+});
+
+test("Winnipeg's uncounted date list rejects impossible or duplicate dates and has no implicit empty result", () => {
+  assert.throws(() => parseWinnipeg(publishedDates.replace("Nov.19", "Nov.31")), /invalid session date/);
+  assert.throws(() => parseWinnipeg(publishedDates.replace("Nov.23", "November 19")), /duplicate/);
+  assert.throws(() => parseWinnipeg(publishedDates.replace("Dec.04", "Dec.04 (full)")), /unrecognized session date/);
+  const noDates = publishedDates.replace(/Nov\.19[\s\S]*?Dec\.04/, "");
+  assert.throws(() => parseWinnipeg(noDates), /boundary changed/);
+  const outside = "<h3>January 1 (99 spots available)</h3>";
+  assert.deepEqual(parseWinnipeg(outside + publishedDates + outside), parseWinnipeg(publishedDates));
+});
+
+test("Winnipeg's bounded public scraper accepts the captured changed layout", async () => {
+  const slots = await scrapeWinnipeg({ fetchImpl: async () => htmlResponse(publishedDates) });
+  assert.equal(slots.length, 8);
+});
+
+test("Winnipeg preserves state for explicitly hidden sections, banners, dates, or registration links", () => {
+  const targets = [
+    (html: string, attribute: string) => html.replace("<section ", `<section ${attribute} `),
+    (html: string, attribute: string) => html.replace("<h3>", `<h3 ${attribute}>`),
+    (html: string, attribute: string) => html.replace(/(<h3>[\s\S]*?<\/h3>[\s\S]*?)<h3>/, `$1<h3 ${attribute}>`),
+    (html: string, attribute: string) => html.replace("<a class=", `<a ${attribute} class=`),
+  ];
+  for (const attribute of ["hidden", 'aria-hidden="true"', 'style="display: none !important;"', "style='visibility:hidden'"]) {
+    for (const mutate of targets) {
+      const hidden = mutate(publishedDates, attribute);
+      assert.notEqual(hidden, publishedDates, "hidden target mutation must take effect");
+      assert.throws(() => parseWinnipeg(hidden), /explicitly hidden.*state must be preserved/);
+    }
+  }
+  assert.throws(() => parseWinnipeg(observed.replace("<section ", "<section hidden ")), /explicitly hidden/);
+});
+
+test("Winnipeg hidden-markup guard is scoped to the selected section and actual attributes", () => {
+  const unrelated = '<section hidden><h3>Not a session listing</h3></section>';
+  const annotation = publishedDates.replace("<section ", '<section aria-hidden="false" title="display:none hidden text" ');
+  assert.equal(parseWinnipeg(unrelated + annotation).length, 8);
 });
 
 test("Winnipeg requires explicit positive seats and recognizes dated full, closed, sold-out and zero states", () => {

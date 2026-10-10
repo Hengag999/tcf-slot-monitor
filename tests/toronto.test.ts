@@ -6,6 +6,7 @@ import { createSources, runMonitor, type MonitorDependencies } from "../scripts/
 
 const fixture = JSON.parse(readFileSync(new URL("./fixtures/toronto-child-candidates.json", import.meta.url), "utf8"));
 const hierarchy = JSON.parse(readFileSync(new URL("./fixtures/toronto-ac-hierarchy.json", import.meta.url), "utf8"));
+const nullChildIds = JSON.parse(readFileSync(new URL("./fixtures/toronto-null-child-ids.json", import.meta.url), "utf8"));
 const item = (id = 123, format = "paper") => ({
   id, name: `${format === "computer" ? "E" : "P"}-TCF CANADA - 4 modules`,
   status: 0, open_spaces: 1, other_category: { id: format === "computer" ? 367 : 368 },
@@ -214,6 +215,52 @@ test("configured computer source covers all real advertised children without CM 
   assert.ok(hierarchy.officialCmCandidates.every((id: number) => childIds.includes(id)));
 });
 
+test("observed null child IDs use public child discovery and confirm the real Oct16 child", async () => {
+  const requests: string[] = [];
+  replaceFetch((url, init) => {
+    requests.push(url);
+    if (url.includes("/activities/list")) return response(acList([nullChildIds.parent]));
+    if (url.includes("/activities/subs/129464?")) {
+      assert.deepEqual(JSON.parse(String(init?.body)), {
+        sub_activity_ids: "", activity_transfer_pattern: {}, open_spots: 0,
+      });
+      return response(nullChildIds.childrenResponse);
+    }
+    assert.match(url, /\/activity\/detail\/129465\?/);
+    return response(nullChildIds.detailResponse);
+  });
+  const source = createSources().find(source => source.key === "toronto" && source.source === "computer")!;
+  assert.deepEqual(await source.scrape(), [{
+    id: "129465", examType: "E-TCF Canada", date: "2026-10-16", availableSeats: 1,
+    bookingUrl: "https://anc.ca.apm.activecommunities.com/aftoronto/activity/search/detail/129465",
+  }]);
+  assert.equal(requests.length, 3);
+  assert.ok(requests.every(url => !url.includes("cm-api") && !url.includes("/detail/129464")));
+});
+
+test("null ID discovery still rejects missing, extra, duplicate, wrong-format or parent children", async () => {
+  for (const children of [[], [activity(11), activity(12)], [activity(11), activity(11)],
+    [{ ...activity(11), name: "P-TCF CANADA - 4 modules" }], [activity(11, "", [])]]) {
+    replaceFetch(url => response(url.includes("/activities/list") ? acList([nullChildIds.parent])
+      : acList(children, "sub_activities")));
+    await assert.rejects(scrapeTorontoComputer, /incomplete|duplicate|unexpected children/);
+  }
+  replaceFetch(() => response(acList([{ ...nullChildIds.parent, parent_activity: false }])));
+  await assert.rejects(scrapeTorontoComputer, /malformed activity hierarchy/);
+});
+
+test("null ID discovery traverses every page and enforces its advertised total", async () => {
+  const childPages: number[] = [];
+  replaceFetch((url, init) => {
+    if (url.includes("/activities/list")) return response(acList([{ ...nullChildIds.parent, num_of_sub_activities: 2 }]));
+    const page = JSON.parse(new Headers(init?.headers).get("page_info")!).page_number;
+    childPages.push(page);
+    return response(acList([activity(10 + page)], "sub_activities", page, 2, 2));
+  });
+  assert.deepEqual(await scrapeTorontoComputer(), []);
+  assert.deepEqual(childPages, [1, 2]);
+});
+
 test("a parent with no children and a positive aggregate space count is never a candidate", async () => {
   const calls = replaceFetch(() => response(acList([{ ...activity(129464, "", []), total_open: 14, already_enrolled: 13 }])));
   assert.deepEqual(await scrapeTorontoComputer(), []);
@@ -244,7 +291,7 @@ test("all top-level and child pages must be complete before returning a snapshot
 
 test("malformed advertised child counts, IDs and hierarchy metadata fail the source", async () => {
   for (const change of [{ num_of_sub_activities: 2 }, { sub_activity_ids: [11, 11], num_of_sub_activities: 2 },
-    { sub_activity_ids: null }, { parent_activity: undefined }, { parent_activity: false }, { sub_activity_ids: [-1] }]) {
+    { sub_activity_ids: undefined }, { sub_activity_ids: [] }, { parent_activity: undefined }, { parent_activity: false }, { sub_activity_ids: [-1] }]) {
     replaceFetch(() => response(acList([{ ...activity(10, "On hold", [11]), ...change } as ReturnType<typeof activity>])));
     await assert.rejects(scrapeTorontoComputer, /malformed activity hierarchy/);
   }
@@ -344,4 +391,18 @@ test("configured computer child failure preserves state; verified empty hierarch
   replaceFetch(() => response(acList([activity(129464, "", [])])));
   await runMonitor([source], false, io);
   assert.deepEqual(writes, [["toronto", "E-TCF Canada", [], false]]);
+});
+
+test("incomplete null ID discovery preserves the previous computer snapshot", async () => {
+  const source = createSources().find(source => source.key === "toronto" && source.source === "computer")!;
+  const io: MonitorDependencies = {
+    getPrevState: async () => [{ city: "toronto", exam_type: "E-TCF Canada", slots: [{ id: "keep" }] }],
+    upsertState: async () => assert.fail("an unknown snapshot must not be persisted"),
+    notifyDiscord: async () => assert.fail("an unknown snapshot must not notify"),
+    runRegistrationReminders: async () => assert.fail("not a reminder source"),
+  };
+  for (const childResponse of [response(acList([], "sub_activities")), response({}, 403)]) {
+    replaceFetch(url => url.includes("/activities/list") ? response(acList([nullChildIds.parent])) : childResponse.clone());
+    await assert.rejects(runMonitor([source], false, io), /computer \(scrape\)/);
+  }
 });

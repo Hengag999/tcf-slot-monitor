@@ -6,7 +6,7 @@ export interface Slot {
   examType: "TCF Canada";
   date: string;
   bookingUrl: string;
-  availableSeats: number;
+  availableSeats?: number;
 }
 
 export const WINNIPEG_PAGE = "https://www.afmanitoba.ca/en/exams/tcf/";
@@ -29,9 +29,23 @@ function isEmptyNotice(value: string): boolean {
   return /^(?:No (?:upcoming )?(?:sessions|dates|spots) (?:are )?(?:currently )?available|All sessions (?:are )?(?:full|sold out))[.!]?$/i.test(value);
 }
 
-function parseSession(value: string): { date: string; seats: number } {
-  const match = value.match(/^([a-z]+)\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?\s*\((?:(\d+)\s+spots?\s+available|(full|sold out|closed))\)$/i);
-  if (!match) throw new Error("Winnipeg: unrecognized session date or availability; state must be preserved");
+function hasExplicitlyHiddenMarkup(html: string): boolean {
+  const tags = /<[a-z][\w:-]*\b((?:[^"'<>]|"[^"]*"|'[^']*')*)>/gi;
+  for (const tag of html.matchAll(tags)) {
+    const attributes = /([^\s=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/g;
+    for (const attribute of tag[1].matchAll(attributes)) {
+      const name = attribute[1].toLowerCase();
+      const value = attribute[2] ?? attribute[3] ?? attribute[4] ?? "";
+      if (name === "hidden" || (name === "aria-hidden" && value.toLowerCase() === "true")
+        || (name === "style" && /(?:^|;)\s*(?:display\s*:\s*none|visibility\s*:\s*hidden)\s*(?:!important\s*)?(?:;|$)/i.test(value))) return true;
+    }
+  }
+  return false;
+}
+
+function parseDate(value: string): string {
+  const match = value.match(/^([a-z]+)(?:\.\s*|\s+)(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?$/i);
+  if (!match) throw new Error("Winnipeg: unrecognized session date; state must be preserved");
   const monthName = match[1].toLowerCase();
   const month = MONTHS.findIndex(name => name.toLowerCase() === monthName
     || name.slice(0, 3).toLowerCase() === monthName
@@ -45,9 +59,45 @@ function parseSession(value: string): { date: string; seats: number } {
   if (day < 1 || day > maxDay || (year !== undefined && year < 1000)) {
     throw new Error("Winnipeg: invalid session date; state must be preserved");
   }
-  const seats = match[4] === undefined ? 0 : Number(match[4]);
+  return `${MONTHS[month]} ${day}${year === undefined ? "" : `, ${year}`}`;
+}
+
+function parseSession(value: string): { date: string; seats: number } {
+  const match = value.match(/^(.+?)\s*\((?:(\d+)\s+spots?\s+available|(full|sold out|closed))\)$/i);
+  if (!match) throw new Error("Winnipeg: unrecognized session date or availability; state must be preserved");
+  const date = parseDate(match[1].trim());
+  const seats = match[2] === undefined ? 0 : Number(match[2]);
   if (!Number.isSafeInteger(seats) || seats < 0) throw new Error("Winnipeg: invalid seat count");
-  return { date: `${MONTHS[month]} ${day}${year === undefined ? "" : `, ${year}`}`, seats };
+  return { date, seats };
+}
+
+function publishedDatesWithoutCounts(rest: string): Slot[] {
+  // Observed October 10: the centre replaced counted session headings and the
+  // next-announcement block with a positive availability banner and a <br> list.
+  // The exact disclaimer within that list is its boundary, not section end.
+  const headings = [...rest.matchAll(/<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1\s*>/gi)];
+  if (headings.length !== 2 || headings.some(heading => heading[1] !== "3")
+    || !/^New dates:\s*spots available!$/i.test(text(headings[0][2]))) {
+    throw new Error("Winnipeg: Next sessions boundary missing or unrecognized availability list; state must be preserved");
+  }
+  const lines = headings[1][2].split(/<br\s*\/?\s*>/gi).map(text).filter(Boolean);
+  const disclaimer = "No refund or deferment is possible. Cancellations for climatic or personal reasons are not possible.";
+  const boundaries = lines.flatMap((line, index) => line === disclaimer ? [index] : []);
+  if (boundaries.length !== 1 || boundaries[0] === 0
+    || !/^Registration(?: Registration)?$/.test(lines.slice(boundaries[0] + 1).join(" "))) {
+    throw new Error("Winnipeg: published dates disclaimer or registration boundary changed; state must be preserved");
+  }
+  const remainder = rest.replace(/<h([1-6])\b[^>]*>[\s\S]*?<\/h\1\s*>/gi, "");
+  if (!/^NO MU(?:L)?TIPLE REGISTRATIONS FOR THE SAME CANDIDATE!$/i.test(text(remainder))) {
+    throw new Error("Winnipeg: unrecognized content surrounding published dates; state must be preserved");
+  }
+  const dates = lines.slice(0, boundaries[0]).map(parseDate);
+  if (new Set(dates).size !== dates.length) throw new Error("Winnipeg: duplicate session date is ambiguous");
+  return dates.map(date => ({
+    id: `winnipeg-${date.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+    examType: "TCF Canada", date, bookingUrl: WINNIPEG_REGISTRATION,
+    // The source says places are available but does not publish seat counts.
+  }));
 }
 
 export function parseWinnipeg(html: string): Slot[] {
@@ -65,6 +115,12 @@ export function parseWinnipeg(html: string): Slot[] {
     throw new Error("Winnipeg: missing or ambiguous Next sessions section");
   }
   const section = sections[0];
+  // Hidden availability or registration markup is not evidence of an active
+  // public offer. Reject this snapshot; never turn hidden content into [] or
+  // let a hidden banner/date/link establish availability for the whole card.
+  if (hasExplicitlyHiddenMarkup(section)) {
+    throw new Error("Winnipeg: explicitly hidden session or registration markup; state must be preserved");
+  }
   const titles = [...section.matchAll(/<h2\b[^>]*>([\s\S]*?)<\/h2\s*>/gi)]
     .filter(heading => /^Next sessions$/i.test(text(heading[1])));
   if (titles.length !== 1) throw new Error("Winnipeg: ambiguous Next sessions heading");
@@ -81,7 +137,7 @@ export function parseWinnipeg(html: string): Slot[] {
   const rest = section.slice(start);
   const boundary = [...rest.matchAll(/<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]\s*>/gi)]
     .find(heading => /^(?:Next dates will be announced on|Important information)$/i.test(text(heading[1])));
-  if (!boundary) throw new Error("Winnipeg: Next sessions boundary missing; state must be preserved");
+  if (!boundary) return publishedDatesWithoutCounts(rest);
   const listing = rest.slice(0, boundary.index);
   const slots: Slot[] = [];
   const dates = new Set<string>();

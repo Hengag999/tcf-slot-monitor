@@ -175,8 +175,11 @@ function validateAcItems(items: unknown[], label: string): AcItem[] {
       || typeof item.urgent_message?.status_description !== "string"
       || !(ids === null || Array.isArray(ids))
       || (ids ?? []).some(id => !Number.isInteger(id) || id <= 0)
-      || (ids ?? []).length !== item.num_of_sub_activities
-      || new Set(ids ?? []).size !== item.num_of_sub_activities
+      // AC can advertise a parent's child count while omitting its ID list.
+      // Its public client then discovers those children through /activities/subs.
+      // An explicit list must still be complete and contain no duplicates.
+      || (ids !== null && (ids.length !== item.num_of_sub_activities
+        || new Set(ids).size !== item.num_of_sub_activities))
       || (!item.parent_activity && item.num_of_sub_activities !== 0)) {
       throw new Error(`${label}: malformed activity hierarchy; availability unknown`);
     }
@@ -240,11 +243,11 @@ async function discoverComputerActivities(): Promise<AcItem[]> {
     // Follow children even when their parent says Full/On Hold. The parent is a
     // navigation group, and its own space count is never a bookable candidate.
     if (item.num_of_sub_activities === 0) continue;
-    const ids = item.sub_activity_ids!;
+    const ids = item.sub_activity_ids;
     const children = await fetchAcPages(`subs/${item.id}`, {
-      sub_activity_ids: ids.join(","), activity_transfer_pattern: {}, open_spots: 0,
+      sub_activity_ids: ids?.join(",") ?? "", activity_transfer_pattern: {}, open_spots: 0,
     }, "sub_activities", `AC children of ${item.id}`);
-    if (children.length !== ids.length || children.some(child => !ids.includes(child.id)
+    if (children.length !== item.num_of_sub_activities || children.some(child => (ids !== null && !ids.includes(child.id))
       || child.parent_activity || !/^E[-\s]*TCF\b/i.test(child.name))) {
       throw new Error(`AC children of ${item.id}: incomplete or unexpected children; availability unknown`);
     }

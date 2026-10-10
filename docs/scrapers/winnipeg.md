@@ -14,7 +14,7 @@
 ## Source contract and limits
 
 This centre offers TCF Canada and an online registration form. Its public page
-publishes dates and remaining places, but the form does not expose live checkout
+publishes dates and availability (sometimes numeric remaining places), but the form does not expose live checkout
 inventory or a session selector before submission. Registration requires the
 form, payment, and centre confirmation. The monitor never submits the form,
 reserves places, or makes payments.
@@ -22,9 +22,14 @@ reserves places, or makes payments.
 The scraper performs one GET with an honest monitor User-Agent, a 20-second
 timeout, and redirects disabled. It requires TCF Canada page context, one
 `Next sessions` section, and the exact linked same-origin registration form.
-Only positive, explicit seat counts in the session headings become slots.
-The next-announcement date is outside the session boundary and is never treated
-as an exam date or a reminder timestamp.
+Positive, explicit seat counts in the original session headings become slots.
+The October 10 variant instead publishes a positive `New dates: spots available!`
+banner followed by a line-separated date list; those slots omit `availableSeats`
+because the centre gives no numeric counts. This variant requires the observed
+two-heading structure, exact refund disclaimer as the list boundary, and the
+same validated registration link. Bare dates without that positive context
+remain unknown and throw. The next-announcement date, when present, is outside
+the original session boundary and is never treated as an exam date or reminder.
 
 Month/day spelling is normalized; a missing year stays missing. An explicit
 year is retained. Duplicate or impossible dates, ambiguous sections, changed
@@ -116,6 +121,39 @@ at `03:31:36.614Z` with both incident markers null.
 The three-cycle steady-state check is complete. These observations establish
 current functioning and deduplication, not a guarantee against future source
 changes or a permanent fix for Toronto's intermittent upstream challenge.
+
+## October 10 source-layout incident — local repair awaiting deployment
+
+Run `38018467059` reported `Next sessions boundary missing; state must be
+preserved`. A fresh public GET reproduced the underlying change: the centre
+removed its next-announcement heading and the per-date seat counts. Its current
+`Next sessions` card has a positive **spots available!** banner, then eight dates
+in one heading separated by `<br>` tags, followed by the refund disclaimer and
+the same registration link:
+
+- November 19, 23, 24, 25, 27
+- December 1, 2, 4
+
+The source does not state years or remaining counts for those dates. The repair
+keeps both absent rather than guessing, while preserving the published
+availability wording and registration caveat. The previous parser's exception
+was the correct conservative response to unknown markup; it did not establish
+that no slots existed or erase the preceding snapshot.
+
+The new branch recognizes only the captured positive-list shape. Changed or
+negated availability, missing/duplicated disclaimer, extra unknown text,
+missing registration context, duplicate/impossible dates, and an empty list
+still throw. Explicit `hidden`, `aria-hidden="true"`, `display:none`, or
+`visibility:hidden` markup anywhere in the selected session section also
+rejects the snapshot rather than treating hidden offers as available or empty.
+Unrelated hidden markup elsewhere on the page does not affect this check.
+The previous counted-date and explicit-empty variants retain
+their regression coverage. The captured fixture includes only public TCF page
+context and the relevant session section, without scripts or personal data.
+
+All **14 Winnipeg regression tests** and typecheck pass locally. These checks
+do not establish production delivery; deployment and the next automatic run
+must be verified separately.
 
 ## Read-only debugging
 
