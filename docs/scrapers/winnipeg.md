@@ -122,7 +122,7 @@ The three-cycle steady-state check is complete. These observations establish
 current functioning and deduplication, not a guarantee against future source
 changes or a permanent fix for Toronto's intermittent upstream challenge.
 
-## October 10 source-layout incident — local repair awaiting deployment
+## October 10 source-layout incident — repair deployed
 
 Run `38018467059` reported `Next sessions boundary missing; state must be
 preserved`. A fresh public GET reproduced the underlying change: the centre
@@ -151,9 +151,18 @@ The previous counted-date and explicit-empty variants retain
 their regression coverage. The captured fixture includes only public TCF page
 context and the relevant session section, without scripts or personal data.
 
-All **14 Winnipeg regression tests** and typecheck pass locally. These checks
-do not establish production delivery; deployment and the next automatic run
-must be verified separately.
+All **14 Winnipeg regression tests** and typecheck pass locally. Commit
+`11988cc` shipped the repair. Automatic run
+[38019365047](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/38019365047)
+passed all 12 sources and delivered the eight-date notification, independently
+read back in the existing Discord channel at 11:06 China time. A read-only query
+confirmed eight saved slots without seat counts or years, after Discord acceptance.
+The next automatic run, `38019663218`, again passed all 12 sources and reported
+`8 → 8` without a Discord send. A third run, `38019960548`, repeated that result;
+the final read-only check confirmed fresh state and the original notification
+timestamp. See the
+[October 10 incident record](../health-assessment-2026-10-10.md) for delivery
+links and the complete production follow-up.
 
 ## Read-only debugging
 

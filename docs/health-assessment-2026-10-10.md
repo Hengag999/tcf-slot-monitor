@@ -67,6 +67,46 @@ explicitly hidden selected section, availability heading, date, or registration
 link fails and preserves state instead of establishing availability. Both old
 and new visible listing formats remain covered.
 
-Deployment verification is pending. Only normal automatic timer runs will be
-used for production verification; no extra manual dispatch or local live
-pipeline is needed.
+Commit `11988cc` shipped both repairs. The first ordinary automatic run,
+[38019365047](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/38019365047),
+started at **03:06:00 UTC / 11:06 China time**. It passed all 12 real sources,
+172 tests, typecheck, and the scoped database guard with zero forbidden
+privileges. Toronto computer reported four parent rows, four concrete children,
+and one available slot; Winnipeg reported eight dates. Toronto paper was healthy.
+
+Both real notifications were read back in the existing Discord channels:
+
+- [Toronto message](https://discord.com/channels/1484038585907810535/1484040090144608346/1558314717141794898), **03:06:20.654 UTC**: October 16, one place, concrete child link `129465`.
+- [Winnipeg message](https://discord.com/channels/1484038585907810535/1557954285474685010/1558314773458714768), **03:06:34.081 UTC**: all eight dates, no invented seat counts or years, both official links and the registration caveat.
+
+A read-only transaction at **03:07:17.159 UTC** confirmed Toronto's one-slot
+snapshot with `checked_at=notified_at=03:06:25.048Z`, and Winnipeg's eight-slot
+snapshot with `checked_at=notified_at=03:06:34.957Z` on October 10. These writes
+occurred only through the normal production pipeline, after Discord acceptance.
+
+Three consecutive automatic cycles completed on `11988cc`:
+
+| Run | Creation, China time (Oct 10) | Result |
+|---|---|---|
+| [38019365047](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/38019365047) | 11:06:00 | 12/12 OK; recovered Toronto and Winnipeg notifications accepted |
+| [38019663218](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/38019663218) | 11:11:05 | 12/12 OK; Toronto `1 → 1`, Winnipeg `8 → 8`; no Discord sends |
+| [38019960548](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/38019960548) | 11:16:08 | 12/12 OK; same unchanged counts; no Discord sends |
+
+Every cycle passed **172 tests**, typecheck, and the `tcf_slot_monitor` guard
+with **zero forbidden privileges**. Observed creation intervals were 5m05s and
+5m03s. Toronto paper succeeded on all three cycles; this does not establish a
+permanent repair to its separate intermittent upstream challenge.
+
+Final read-only verification at **03:17:09.522 UTC / 11:17 China time** confirmed
+all **14 availability/reminder rows**, excluding health metadata, refreshed
+between `03:16:25.847Z` and `03:16:34.236Z`. Toronto computer held one slot and
+Winnipeg eight. Their `notified_at` values remained `03:06:25.048Z` and
+`03:06:34.957Z`, respectively, proving the unchanged follow-up snapshots did not
+consume new notification events. Toronto paper's health row recorded success
+at `03:16:26.057Z` with both incident markers null.
+
+Steady-state verification for this repair is complete. No extra manual dispatch,
+local live pipeline, credential/grant change, or alert suppression was used.
+New unknown source errors remain visible. Future source changes can still
+require another repair; these observations verify the current source formats
+and production behavior.

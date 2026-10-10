@@ -7,7 +7,7 @@
 | **Page** | [Official registration page](https://www.alliance-francaise.ca/en/exams/tests/informations-about-tcf-canada/tcf-canada) |
 | **Discord** | #toronto |
 | **DB keys** | city=`toronto`, exam_type=`E-TCF Canada` and `P-TCF Canada` |
-| **Status** | **October 10 hierarchy regression reproduced and locally repaired:** AC now advertises a child count while omitting the child ID list for parent 129464. Public child discovery recovers concrete activity 129465, October 16, with one opening. The corrected full standalone returns four parents, four concrete activities, and one bookable child. Deployment verification is pending; paper and its challenge policy are unchanged. |
+| **Status** | **October 10 repair verified:** public child discovery now handles an advertised count with a null ID list, recovering concrete activity 129465, October 16, with one opening. Three consecutive automatic runs passed all 12 sources, delivered one recovered Toronto notification, then reported unchanged availability without a repeat. See the October 10 incident record for complete follow-up; paper and its challenge policy are unchanged. |
 
 ## Current behavior
 
@@ -335,5 +335,14 @@ used. All **34 Toronto tests** passed, along with the full TypeScript check. The
 new sanitized fixture records the real public parent, child-list response and
 child detail; tests cover actual orchestrator wiring, complete pagination, negative
 hierarchy cases, and snapshot preservation. Independent code review found no
-blocking issues. Production delivery and state recovery remain to be verified by
-an ordinary scheduled run.
+blocking issues. Commit `11988cc` shipped the repair. Automatic run
+[38019365047](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/38019365047)
+passed all 12 sources and delivered the concrete child's October 16 opening,
+confirmed in the actual Discord channel. A read-only transaction confirmed one
+stored E-TCF slot after Discord acceptance. The next automatic run,
+`38019663218`, also passed all 12 sources and reported `1 → 1` without a repeat
+notification. The third run, `38019960548`, repeated that result; a final read-only
+query confirmed fresh state and the original notification timestamp. Paper
+succeeded on all three. See the
+[October 10 incident record](../health-assessment-2026-10-10.md) for exact
+message/run links and full follow-up evidence.
