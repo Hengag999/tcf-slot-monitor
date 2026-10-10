@@ -166,6 +166,17 @@ timestamp. See the
 [October 10 incident record](../health-assessment-2026-10-10.md) for delivery
 links and the complete production follow-up.
 
+## October 11 formatting recurrence
+
+The date-only announcement was reformatted from one heading into individual
+paragraphs and gained October 20, bringing its list to nine dates. The wording,
+disclaimer, and registration link stayed unchanged. Requiring two headings was
+too restrictive; commit `3fbea3e` replaces that requirement with bounded semantic
+text lines while retaining the positive-availability and unknown-state checks.
+Prior date IDs stay identical, so only October 20 is newly eligible for an alert.
+See the [October 11 incident record](../health-assessment-2026-10-11.md) for the
+Mail-backed diagnosis, regression tests, and production verification.
+
 ## Read-only debugging
 
 ```bash
