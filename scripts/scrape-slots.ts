@@ -1,5 +1,5 @@
 import "../src/lib/env"; // load .env.local before anything reads process.env
-import { scrapeTorontoComputer, scrapeTorontoPaper, TorontoPaperChallengeError } from "./scrapers/toronto";
+import { scrapeTorontoComputer, scrapeTorontoPaper, TorontoPaperChallengeError, TorontoPaperTransportError } from "./scrapers/toronto";
 import { scrapeCalgary } from "./scrapers/calgary";
 import { scrapeHalifax } from "./scrapers/halifax";
 import { scrapeOttawa } from "./scrapers/ottawa";
@@ -199,17 +199,19 @@ export async function runMonitor(
     try {
       allSlots = await city.scrape();
     } catch (err) {
-      if (!dryRun && source === "toronto/paper" && err instanceof TorontoPaperChallengeError) {
+      if (!dryRun && source === "toronto/paper"
+        && (err instanceof TorontoPaperChallengeError || err instanceof TorontoPaperTransportError)) {
+        const cause = err instanceof TorontoPaperChallengeError ? "challenge" : "temporary connection failure";
         try {
           const decision = await recordPaperChallenge(io, now());
           const detail = decision.action === "alert" ? "one-hour outage — alert issued"
             : decision.action === "already-reported" ? "outage already reported — repeats suppressed"
             : "within one-hour grace period";
-          console.warn(`[${source}] Known SiteGround challenge: ${detail}; ${decision.minutesWithoutSuccess} min without success; availability state preserved`);
-          results.push({ source, status: `DEGRADED — ${detail}; state preserved` });
-          if (decision.action === "alert") failures.push(`${source} (one-hour challenge outage)`);
+          console.warn(`[${source}] ${cause}: ${detail}; ${decision.minutesWithoutSuccess} min without success; availability state preserved; ${err.message}`);
+          results.push({ source, status: `DEGRADED — ${detail}; state preserved; ${cause}` });
+          if (decision.action === "alert") failures.push(`${source} (one-hour ${cause} outage)`);
         } catch {
-          console.error(`[${source}] Health-state check/persistence failed; cannot safely suppress challenge`);
+          console.error(`[${source}] Health-state check/persistence failed; cannot safely suppress outage`);
           failures.push(`${source} (health state)`);
           results.push({ source, status: "HEALTH STATE FAILED — availability state preserved" });
         }

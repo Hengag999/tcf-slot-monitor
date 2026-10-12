@@ -15,6 +15,15 @@ export class TorontoPaperChallengeError extends Error {
   }
 }
 
+// Only the paper list can opt into this policy after three confirmed temporary
+// transport failures. Unknown failures and other Toronto requests stay fatal.
+export class TorontoPaperTransportError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TorontoPaperTransportError";
+  }
+}
+
 export interface Slot {
   id: string;
   examType: ExamType;
@@ -66,23 +75,74 @@ function nonJsonDiagnostics(res: Response, body: string, classification: NonJson
   return details.join(", ");
 }
 
+// Fetch commonly wraps Node/Undici transport errors in a TypeError cause (or
+// AggregateError). Keep only fixed names/codes, never messages, hosts or URLs.
+function requestDiagnostics(error: unknown, ownTimeout: boolean): { details: string; temporary: boolean } {
+  const names = new Set(["Error", "TypeError", "AggregateError", "AbortError", "TimeoutError",
+    "ConnectTimeoutError", "HeadersTimeoutError", "BodyTimeoutError", "SocketError"]);
+  const codes = new Set(["ENOTFOUND", "EAI_AGAIN", "ECONNRESET", "ECONNREFUSED", "ETIMEDOUT",
+    "ENETUNREACH", "EHOSTUNREACH", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT",
+    "UND_ERR_BODY_TIMEOUT", "UND_ERR_SOCKET", "UND_ERR_ABORTED"]);
+  const temporaryCodes = new Set(["EAI_AGAIN", "ECONNRESET", "ETIMEDOUT", "UND_ERR_CONNECT_TIMEOUT",
+    "UND_ERR_HEADERS_TIMEOUT", "UND_ERR_BODY_TIMEOUT", "UND_ERR_SOCKET"]);
+  let complete = true;
+  const field = (value: unknown, key: string | number): unknown => {
+    if (!value || typeof value !== "object") return undefined;
+    try { return (value as Record<string | number, unknown>)[key]; } catch { complete = false; return undefined; }
+  };
+  const name = field(error, "name");
+  const transportCodes = new Set<string>();
+  const seen = new Set<unknown>();
+  // Every branch must be understood. Unknown siblings, cycles, unreadable fields
+  // or a traversal limit prevent grace rather than silently weakening the check.
+  const inspect = (value: unknown): boolean => {
+    if (!value || typeof value !== "object" || seen.has(value) || seen.size >= 16) return false;
+    seen.add(value);
+    const code = field(value, "code");
+    if (typeof code === "string" && codes.has(code)) transportCodes.add(code);
+    const cause = field(value, "cause");
+    const errors = field(value, "errors");
+    const children: boolean[] = [];
+    if (cause !== undefined) children.push(inspect(cause));
+    if (errors !== undefined) {
+      const length = field(errors, "length");
+      if (!Array.isArray(errors) || typeof length !== "number" || !Number.isInteger(length) || length < 1 || length > 8) {
+        children.push(false);
+      } else {
+        for (let child = 0; child < length; child++) children.push(inspect(field(errors, child)));
+      }
+    }
+    const known = (typeof code === "string" && temporaryCodes.has(code)) || (value === error && ownTimeout);
+    return (code === undefined || known) && children.every(Boolean) && (known || children.length > 0);
+  };
+  const temporary = inspect(error) && complete;
+  return {
+    details: `errorName=${typeof name === "string" && names.has(name) ? name : "unknown"}, transportCodes=${[...transportCodes].sort().join("|") || "unknown"}`,
+    temporary,
+  };
+}
+
 async function fetchJson<T>(
   url: string,
   label: string,
   init: RequestInit = {},
-  options: { classifyTorontoPaperChallenge?: boolean } = {},
+  options: { classifyTorontoPaperFailures?: boolean } = {},
 ): Promise<T> {
   const MAX_ATTEMPTS = 3;
+  let allAttemptsTemporary = true;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     let error: Error;
     let retryable = true;
+    let signal: AbortSignal | undefined;
     try {
+      signal = AbortSignal.timeout(20_000);
       const res = await fetch(url, {
         ...init,
         headers: { ...REQUEST_HEADERS, ...init.headers },
-        signal: AbortSignal.timeout(20_000),
+        signal,
       });
       if (!res.ok) {
+        allAttemptsTemporary = false;
         error = new Error(`${label}: HTTP ${res.status}`);
         // Repeating a denied or nonexistent request does not restore coverage.
         retryable = res.status === 429 || res.status >= 500;
@@ -91,6 +151,7 @@ async function fetchJson<T>(
         try {
           return JSON.parse(body) as T;
         } catch {
+          allAttemptsTemporary = false;
           const contentType = res.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase();
           const typeLabel = contentType && ["text/html", "text/plain", "application/json"].includes(contentType)
             ? contentType : "unknown content type";
@@ -98,7 +159,7 @@ async function fetchJson<T>(
           const message = `${label}: non-JSON response (HTTP ${res.status}, ${typeLabel}; ${nonJsonDiagnostics(res, body, classification)})`;
           // Scope the policy hook to the exact observed paper-list failure. Other
           // sources, statuses, content types, and unrecognized HTML remain errors.
-          error = options.classifyTorontoPaperChallenge && res.status === 202 && contentType === "text/html" && classification === "siteground-challenge"
+          error = options.classifyTorontoPaperFailures && res.status === 202 && contentType === "text/html" && classification === "siteground-challenge"
             ? new TorontoPaperChallengeError(message) : new Error(message);
           // A recognized access challenge does not benefit from rapid retries.
           // Preserve the snapshot and let the next scheduled check try again.
@@ -106,9 +167,17 @@ async function fetchJson<T>(
         }
       }
     } catch (err) {
-      error = new Error(`${label}: request failed — ${(err as Error).message}`);
+      const diagnostics = requestDiagnostics(err, !!signal?.aborted && signal.reason === err
+        && (err as Error)?.name === "TimeoutError");
+      allAttemptsTemporary &&= diagnostics.temporary;
+      error = new Error(`${label}: request failed (${diagnostics.details})`);
     }
-    if (!retryable || attempt === MAX_ATTEMPTS) throw error;
+    if (!retryable || attempt === MAX_ATTEMPTS) {
+      if (attempt === MAX_ATTEMPTS && options.classifyTorontoPaperFailures && allAttemptsTemporary) {
+        throw new TorontoPaperTransportError(error.message);
+      }
+      throw error;
+    }
     console.warn(`  [toronto] ${error.message} — retry ${attempt}/${MAX_ATTEMPTS - 1}`);
     await new Promise((resolve) => setTimeout(resolve, 1500 * attempt));
   }
@@ -135,7 +204,7 @@ async function fetchCmSessions(category: number, examType: ExamType): Promise<CM
   // A successful JSON error or truncated list must not become an empty snapshot.
   const url = `${CM_API_BASE}?enddate=gte&limit=300&openspaces=1&orderby=course.startDate&othercategory=${category}&status=0`;
   const data = await fetchJson<{ items: CMSession[]; page: number; totalItems: number; limit: string | number }>(
-    url, `CM API category ${category}`, {}, { classifyTorontoPaperChallenge: category === CM_CATEGORY_PTCF },
+    url, `CM API category ${category}`, {}, { classifyTorontoPaperFailures: category === CM_CATEGORY_PTCF },
   );
   if (!Array.isArray(data?.items)) throw new Error(`CM ${examType} list: missing items array`);
   if (data.page !== 1 || !Number.isInteger(data.totalItems) || data.totalItems < 0

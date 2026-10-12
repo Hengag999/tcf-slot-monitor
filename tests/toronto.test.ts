@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, mock, test } from "node:test";
-import { scrapeToronto, scrapeTorontoComputer, scrapeTorontoPaper, TorontoPaperChallengeError } from "../scripts/scrapers/toronto";
+import { scrapeToronto, scrapeTorontoComputer, scrapeTorontoPaper, TorontoPaperChallengeError, TorontoPaperTransportError } from "../scripts/scrapers/toronto";
 import { createSources, runMonitor, type MonitorDependencies } from "../scripts/scrape-slots";
 
 const fixture = JSON.parse(readFileSync(new URL("./fixtures/toronto-child-candidates.json", import.meta.url), "utf8"));
@@ -174,6 +174,168 @@ test("a later valid JSON retry recovers from a transient HTML response", async (
     : response(list([])));
   assert.deepEqual(await scrapeTorontoPaper(), []);
   assert.equal(requests, 2);
+});
+
+const transportError = (code: string) => new TypeError("private request URL must not be logged", {
+  cause: Object.assign(new Error("private address must not be logged"), { code }),
+});
+
+test("paper transport grace requires three known temporary failures with unchanged retry delays", async () => {
+  const originalSetTimeout = globalThis.setTimeout;
+  const delays: number[] = [];
+  mock.method(globalThis, "setTimeout", (callback, delay, ...args) => {
+    delays.push(Number(delay));
+    return originalSetTimeout(callback, 0, ...args);
+  });
+  const warnings = mock.method(console, "warn", () => {});
+  for (const code of ["UND_ERR_CONNECT_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT", "UND_ERR_BODY_TIMEOUT",
+    "ECONNRESET", "ETIMEDOUT", "EAI_AGAIN", "UND_ERR_SOCKET"]) {
+    delays.length = 0;
+    const calls = replaceFetch(() => { throw transportError(code); });
+    await assert.rejects(scrapeTorontoPaper, (error: Error) => {
+      assert.ok(error instanceof TorontoPaperTransportError);
+      assert.ok(!(error instanceof TorontoPaperChallengeError));
+      assert.equal(error.message, `CM API category 368: request failed (errorName=TypeError, transportCodes=${code})`);
+      return true;
+    });
+    assert.equal(calls.mock.calls.length, 3);
+    assert.deepEqual(delays, [1500, 3000]);
+  }
+  for (const call of warnings.mock.calls) assert.doesNotMatch(String(call.arguments[0]), /private/);
+});
+
+test("only this request's own deadline is a confirmed timeout without a native transport code", async () => {
+  const originalSetTimeout = globalThis.setTimeout;
+  mock.method(globalThis, "setTimeout", (callback, _delay, ...args) => originalSetTimeout(callback, 0, ...args));
+  mock.method(console, "warn", () => {});
+  const deadlines = mock.method(AbortSignal, "timeout", (milliseconds) => {
+    assert.equal(milliseconds, 20_000);
+    return AbortSignal.abort(new DOMException("private timeout details", "TimeoutError"));
+  });
+  const calls = replaceFetch((_url, init) => { throw init!.signal!.reason; });
+  await assert.rejects(scrapeTorontoPaper, (error: Error) => {
+    assert.ok(error instanceof TorontoPaperTransportError);
+    assert.match(error.message, /errorName=TimeoutError, transportCodes=unknown/);
+    assert.doesNotMatch(error.message, /private/);
+    return true;
+  });
+  assert.equal(calls.mock.calls.length, 3);
+  assert.equal(deadlines.mock.calls.length, 3);
+});
+
+test("unknown, permanent and incomplete nested transport errors remain immediate failures without leaking details", async () => {
+  const originalSetTimeout = globalThis.setTimeout;
+  mock.method(globalThis, "setTimeout", (callback, _delay, ...args) => originalSetTimeout(callback, 0, ...args));
+  const warnings = mock.method(console, "warn", () => {});
+  const secret = "PRIVATE_URL_TOKEN_ADDRESS_MUST_NOT_APPEAR";
+  const cyclic: { name: string; cause?: unknown } = { name: secret };
+  cyclic.cause = cyclic;
+  const unreadable = Object.assign(new Error(secret), { code: "ECONNRESET" });
+  Object.defineProperty(unreadable, "cause", { get: () => { throw new Error(secret); } });
+  const cases = [
+    new TypeError("fetch failed"),
+    ...["ENOTFOUND", "ECONNREFUSED", "CERT_HAS_EXPIRED", "DEPTH_ZERO_SELF_SIGNED_CERT", "UND_ERR_ABORTED"].map(transportError),
+    new DOMException(secret, "TimeoutError"),
+    { name: secret, code: secret, message: secret, cause: { name: secret, code: secret, address: secret } },
+    new TypeError(secret, { cause: new AggregateError([transportError("ECONNRESET"), new Error(secret)], secret) }),
+    new TypeError(secret, { cause: new AggregateError([transportError("ECONNRESET"), transportError("ENOTFOUND")], secret) }),
+    new AggregateError([], secret),
+    new AggregateError(Array.from({ length: 9 }, () => transportError("ECONNRESET")), secret),
+    cyclic,
+    unreadable,
+  ];
+  for (const failure of cases) {
+    const calls = replaceFetch(() => { throw failure; });
+    await assert.rejects(scrapeTorontoPaper, (error: Error) => {
+      assert.ok(!(error instanceof TorontoPaperTransportError));
+      assert.ok(!(error instanceof TorontoPaperChallengeError));
+      assert.match(error.message, /^CM API category 368: request failed \(errorName=(?:Error|TypeError|AggregateError|TimeoutError|unknown), transportCodes=(?:[A-Z_|]+|unknown)\)$/);
+      assert.doesNotMatch(error.message, new RegExp(`${secret}|private`));
+      return true;
+    });
+    assert.equal(calls.mock.calls.length, 3);
+  }
+  for (const call of warnings.mock.calls) assert.doesNotMatch(String(call.arguments[0]), new RegExp(`${secret}|private`));
+});
+
+test("all AggregateError branches must be confirmed temporary before paper transport grace", async () => {
+  const originalSetTimeout = globalThis.setTimeout;
+  mock.method(globalThis, "setTimeout", (callback, _delay, ...args) => originalSetTimeout(callback, 0, ...args));
+  mock.method(console, "warn", () => {});
+  replaceFetch(() => { throw new TypeError("fetch failed", { cause: new AggregateError([
+    transportError("ETIMEDOUT"), transportError("ECONNRESET"),
+  ]) }); });
+  await assert.rejects(scrapeTorontoPaper, (error: Error) => {
+    assert.ok(error instanceof TorontoPaperTransportError);
+    assert.match(error.message, /transportCodes=ECONNRESET\|ETIMEDOUT/);
+    return true;
+  });
+});
+
+test("mixed failures never promote a final temporary paper transport error", async () => {
+  const originalSetTimeout = globalThis.setTimeout;
+  mock.method(globalThis, "setTimeout", (callback, _delay, ...args) => originalSetTimeout(callback, 0, ...args));
+  mock.method(console, "warn", () => {});
+  for (const first of [() => { throw new TypeError("fetch failed"); }, () => response({}, 503),
+    () => new Response("<html>unknown response</html>", { headers: { "content-type": "text/html" } })]) {
+    let attempts = 0;
+    replaceFetch(() => { if (++attempts === 1) return first(); throw transportError("ECONNRESET"); });
+    await assert.rejects(scrapeTorontoPaper, (error: Error) => {
+      assert.ok(!(error instanceof TorontoPaperTransportError));
+      assert.match(error.message, /transportCodes=ECONNRESET/);
+      return true;
+    });
+    assert.equal(attempts, 3);
+  }
+});
+
+test("temporary transport recovery returns validated JSON and other Toronto requests never gain grace", async () => {
+  const originalSetTimeout = globalThis.setTimeout;
+  mock.method(globalThis, "setTimeout", (callback, _delay, ...args) => originalSetTimeout(callback, 0, ...args));
+  mock.method(console, "warn", () => {});
+  let attempts = 0;
+  replaceFetch(() => { if (++attempts < 3) throw transportError("ECONNRESET"); return response(list([])); });
+  assert.deepEqual(await scrapeTorontoPaper(), []);
+  assert.equal(attempts, 3);
+  replaceFetch(() => { throw transportError("ECONNRESET"); });
+  await assert.rejects(scrapeTorontoComputer, (error: Error) => {
+    assert.ok(!(error instanceof TorontoPaperTransportError));
+    return true;
+  });
+  replaceFetch(url => { if (url.includes("cm-api")) return response(list([item()])); throw transportError("ECONNRESET"); });
+  await assert.rejects(scrapeTorontoPaper, (error: Error) => {
+    assert.ok(error instanceof AggregateError);
+    assert.ok(error.errors.every(cause => !(cause instanceof TorontoPaperTransportError)));
+    return true;
+  });
+});
+
+test("configured paper transport exhaustion reports DEGRADED and preserves its availability snapshot", async () => {
+  const originalSetTimeout = globalThis.setTimeout;
+  mock.method(globalThis, "setTimeout", (callback, _delay, ...args) => originalSetTimeout(callback, 0, ...args));
+  mock.method(console, "warn", () => {});
+  const table = mock.method(console, "table", () => {});
+  const source = createSources().find(source => source.key === "toronto" && source.source === "paper")!;
+  const now = Date.parse("2026-10-12T01:00:00Z");
+  const previous = [{ city: "toronto", exam_type: "P-TCF Canada", slots: [{ id: "keep" }],
+    checked_at: new Date(now - 5 * 60_000).toISOString() }];
+  const writes: unknown[] = [];
+  const io: MonitorDependencies = {
+    getPrevState: async city => city === "toronto" ? previous : [],
+    upsertState: async (...args) => { assert.equal(args[0], "__monitor_health__"); writes.push(args); },
+    notifyDiscord: async () => assert.fail("an unknown snapshot must not notify"),
+    runRegistrationReminders: async () => assert.fail("not a reminder source"),
+  };
+  const calls = replaceFetch(() => { throw transportError("UND_ERR_CONNECT_TIMEOUT"); });
+  await runMonitor([source], false, io, () => now);
+  assert.equal(calls.mock.calls.length, 3);
+  assert.deepEqual(previous[0].slots, [{ id: "keep" }]);
+  assert.deepEqual(writes, [["__monitor_health__", "toronto/paper", [{
+    version: 1, lastSuccessAt: previous[0].checked_at,
+    firstChallengeAt: new Date(now).toISOString(), failureReportedAt: null,
+  }], false]]);
+  assert.deepEqual(table.mock.calls[0].arguments[0], [{ source: "toronto/paper",
+    status: "DEGRADED — within one-hour grace period; state preserved; temporary connection failure" }]);
 });
 
 

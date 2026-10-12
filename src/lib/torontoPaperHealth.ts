@@ -8,6 +8,8 @@ export const CHALLENGE_GRACE_MS = 60 * 60 * 1000;
 export interface PaperHealth {
   version: 1;
   lastSuccessAt: string | null;
+  // Legacy field name: now the first recognized challenge OR temporary CM
+  // connection failure. Both share one outage until actual paper persistence.
   firstChallengeAt: string | null;
   // Records issuing a workflow failure, not a receipt for a GitHub email.
   failureReportedAt: string | null;
@@ -84,6 +86,8 @@ export async function recordPaperSuccess(io: HealthIO, now: number): Promise<voi
   await io.upsertState(HEALTH_CITY, HEALTH_EXAM_TYPE, [state], false);
 }
 
+// Kept for stored-state/API compatibility. Call only for a typed, approved
+// degradation; generic scraper errors must never enter this policy.
 export async function recordPaperChallenge(io: HealthIO, now: number): Promise<ChallengeDecision> {
   const [healthRows, availabilityRows] = await Promise.all([
     io.getPrevState(HEALTH_CITY), io.getPrevState("toronto"),

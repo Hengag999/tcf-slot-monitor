@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createSources, processCity, runMonitor, type CityConfig, type MonitorDependencies } from "../scripts/scrape-slots";
-import { TorontoPaperChallengeError } from "../scripts/scrapers/toronto";
+import { TorontoPaperChallengeError, TorontoPaperTransportError } from "../scripts/scrapers/toronto";
 import { parseWinnipeg } from "../scripts/scrapers/winnipeg";
 import { HEALTH_CITY, HEALTH_EXAM_TYPE } from "../src/lib/torontoPaperHealth";
 import type { StateRow } from "../src/lib/db";
@@ -159,6 +159,7 @@ test("Winnipeg layout recovery announces only the added date and preserves state
 const t0 = Date.parse("2026-10-07T00:00:00Z");
 const minute = 60_000;
 const blockedPaper: CityConfig = { ...paper, scrape: async () => { throw new TorontoPaperChallengeError("known challenge"); } };
+const disconnectedPaper: CityConfig = { ...paper, scrape: async () => { throw new TorontoPaperTransportError("code=UND_ERR_CONNECT_TIMEOUT"); } };
 function policyHarness() {
   let time = t0;
   const rows: StateRow[] = [{ city: "toronto", exam_type: "P-TCF Canada", slots: [{ id: "keep" }], checked_at: new Date(t0).toISOString() }];
@@ -196,6 +197,46 @@ test("one sustained challenge fails once per incident and recovery rearms the on
   await run([blockedPaper], 75);
   await assert.rejects(run([blockedPaper], 130), /one-hour challenge outage/);
   assert.deepEqual(rows.find(row => row.exam_type === "P-TCF Canada")?.slots, []);
+});
+
+test("temporary paper connection failures preserve snapshots and share one incident with challenges", async () => {
+  const { rows, run } = policyHarness();
+  const prior = structuredClone(rows[0]);
+  await run([disconnectedPaper, computer], 5);
+  assert.deepEqual(rows[0], prior);
+  await run([blockedPaper], 59);
+  await assert.rejects(run([disconnectedPaper], 60), /one-hour temporary connection failure outage/);
+  await run([blockedPaper], 65);
+  await run([disconnectedPaper], 70);
+  assert.deepEqual(rows[0], prior);
+  await run([paper], 75);
+  await run([disconnectedPaper], 80);
+  await assert.rejects(run([disconnectedPaper], 135), /one-hour temporary connection failure outage/);
+});
+
+test("temporary-connection grace cannot hide unknown errors, other sources, dry runs, or failed health writes", async () => {
+  const { io, rows, run } = policyHarness();
+  await run([disconnectedPaper], 5);
+  const health = structuredClone(rows.find(row => row.city === HEALTH_CITY));
+  await assert.rejects(run([{ ...paper, scrape: async () => { throw new Error("fetch failed"); } }], 10), /paper \(scrape\)/);
+  assert.deepEqual(rows.find(row => row.city === HEALTH_CITY), health);
+  await assert.rejects(run([{ ...computer, scrape: disconnectedPaper.scrape }], 15), /computer \(scrape\)/);
+  await assert.rejects(run([{ ...paper, key: "calgary", scrape: disconnectedPaper.scrape }], 15), /calgary\/paper \(scrape\)/);
+  const fail = async () => { throw new Error("unexpected external I/O"); };
+  await assert.rejects(runMonitor([disconnectedPaper], true, { getPrevState: fail, upsertState: fail, notifyDiscord: fail, runRegistrationReminders: fail }), /paper \(scrape\)/);
+  io.upsertState = async () => { throw new Error("database unavailable"); };
+  await assert.rejects(run([disconnectedPaper], 20), /health state/);
+});
+
+test("temporary paper connection failure remains visibly degraded in the source summary", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "tcf-transport-summary-"));
+  process.env.GITHUB_STEP_SUMMARY = join(directory, "summary.md");
+  try {
+    await policyHarness().run([disconnectedPaper, computer], 15);
+    const summary = await readFile(process.env.GITHUB_STEP_SUMMARY, "utf8");
+    assert.match(summary, /toronto\/paper \| DEGRADED — within one-hour grace period; state preserved; temporary connection failure/);
+    assert.match(summary, /toronto\/computer \| OK/);
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
 test("other locations still fail while Toronto is in grace or an already-reported outage", async () => {

@@ -21,6 +21,13 @@
   it stops after one request and lets the next scheduled run try again. Earlier
   blocked runs repeated the same challenge on both immediate retries. This cuts
   those unsuccessful requests; it does not establish a permanent access repair.
+- With the October 12 user-approved policy, three confirmed temporary transport
+  failures on the paper CM listing also receive the one-hour grace. Only fixed
+  native timeout/reset/temporary-DNS/socket codes or the request's own expired
+  deadline qualify. Every attempt must qualify; generic `fetch failed`, mixed
+  unknown/HTTP failures, certificate errors, and AC discovery/detail failures do
+  not. Both eligible failure kinds share one outage clock and remain visibly
+  degraded. See the [October 12 incident record](../health-assessment-2026-10-12.md).
 - Missing list arrays, unsuccessful AC response envelopes, malformed rows, truncated/duplicate discovery, failed detail calls, missing detail status/parent metadata, and unknown status text are **unknown availability**, not a known-empty result. They fail that exam type so persistence can retain its previous state.
 - Explicit closed statuses include full, on hold, closed, cancelled, waitlist, sold out, and not open. Positive detail handling accepts numeric openings/spaces/spots/seats, `Open`, `Available`, and `Unlimited openings`. New wording fails visibly rather than assuming a vacancy. `Unlimited openings` was observed on public non-exam AC activities in this assessment; an actual open E-TCF sitting was not available for end-to-end confirmation.
 
@@ -98,32 +105,37 @@ GitHub runner requests received HTML challenges with HTTP 200, freezing Toronto 
 
 ## Debug recipe
 
-### Known paper challenge and failure-email policy — October 7, 2026
+### Paper failure-email policy — October 7, expanded October 12, 2026
 
-The user accepts intermittent Toronto paper checks. Only a typed
-`TorontoPaperChallengeError` from CM category 368 receives the following policy;
-it requires HTTP 202, HTML, and a recognized SiteGround signature. Generic HTML,
+The user accepts intermittent Toronto paper checks. A typed
+`TorontoPaperChallengeError` from CM category 368 requires HTTP 202, HTML, and a
+recognized SiteGround signature. The October 12 user-approved expansion also
+allows `TorontoPaperTransportError` after all three CM listing attempts fail with
+confirmed temporary connection errors. Native causes must be fully recognized;
+unknown nested errors are not ignored. Generic connection errors, generic HTML,
 401/403 responses, malformed data, computer/detail failures, and errors from other
 cities remain immediate workflow failures. Database and Discord failures also
 remain immediate failures.
 
 - Less than one hour since the last successful paper check: show `DEGRADED` in
   logs and the GitHub source summary, preserve paper availability state, and do
-  not fail the workflow for that challenge.
-- At or beyond one hour: fail one workflow run for the sustained challenge.
+  not fail the workflow for that accepted degradation.
+- At or beyond one hour: fail one workflow run for the sustained outage.
   Later occurrences remain visibly degraded but do not repeat that failure until
   a successful paper check rearms the policy. This records issuing a workflow
   failure, not a receipt proving GitHub delivered an email.
 - A successful scrape must finish its notification/persistence work before it
   resets the incident. A failed health-state read/write fails the workflow too.
 - Standalone/dry-run checks remain strict: without production history they report
-  the challenge as an error and perform no health-state writes.
+  either failure as an error and perform no health-state writes.
 
 Health metadata lives in the existing monitor table under reserved key
 `(__monitor_health__, toronto/paper)`, separate from the actual Toronto availability
-rows. It stores version, last success, first challenge, and failure-reported times.
+rows. It stores version, last success, first accepted degradation (legacy field
+name `firstChallengeAt`), and failure-reported times. Switching between a challenge
+and a temporary connection failure does not restart the clock or rearm the alert.
 Existing paper `checked_at` bootstraps the policy; if no successful snapshot exists,
-the first observed challenge starts the hour. No schema changes or new database
+the first accepted degradation starts the hour. No schema changes or new database
 permissions are needed. GitHub's existing concurrency group serializes updates.
 An overall successful workflow can therefore contain a tolerated degraded paper
 source; inspect its source summary for coverage.
