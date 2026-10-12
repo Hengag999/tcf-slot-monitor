@@ -7,7 +7,7 @@
 | **Page** | [Official registration page](https://www.alliance-francaise.ca/en/exams/tests/informations-about-tcf-canada/tcf-canada) |
 | **Discord** | #toronto |
 | **DB keys** | city=`toronto`, exam_type=`E-TCF Canada` and `P-TCF Canada` |
-| **Status** | **October 10 repair verified:** public child discovery now handles an advertised count with a null ID list, recovering concrete activity 129465, October 16, with one opening. Three consecutive automatic runs passed all 12 sources, delivered one recovered Toronto notification, then reported unchanged availability without a repeat. See the October 10 incident record for complete follow-up; paper and its challenge policy are unchanged. |
+| **Status** | **October 12 policy deployed:** confirmed temporary failures of the paper CM connection now share the existing one-hour grace with known SiteGround challenges. Unknown errors remain immediate failures. Both observed morning interruptions recovered on the next automatic run; the upstream cause remains unproven. See the [October 12 incident record](../health-assessment-2026-10-12.md) for verification. The October 10 computer discovery repair remains active. |
 
 ## Current behavior
 

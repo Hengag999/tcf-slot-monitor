@@ -71,6 +71,39 @@ and the configured scraper-to-orchestrator path. Incident tests cover the exact
 one-hour boundary, one failure per outage, switching between accepted causes,
 state preservation, recovery rearming, and failure of health-state persistence.
 
-Normal automatic production follow-up is pending. No manual production dispatches,
-live local pipeline, credential changes, or broader infrastructure changes are
-used.
+## Shipment and production follow-up
+
+Commit `0801da9` shipped the approved policy. The first normal automatic run,
+[38226139722](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/38226139722),
+created at **16:51:11 China time**, passed all 186 tests, typecheck, the scoped
+database guard (zero forbidden privileges across 72 other relations and 41
+sequences), and all 12 actual source checks. Toronto paper actually succeeded;
+there was no production Discord send or failure. Winnipeg remained `9 → 9`.
+
+The new temporary-connection branch was verified in regression tests, but this
+healthy production run did not exercise it. The old morning logs lack native
+causes, so it remains inappropriate to claim the upstream interruption is fixed
+or that those old failures were conclusively classified.
+
+The second automatic run,
+[38226640082](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/38226640082),
+created at **16:56:04 China time**, also passed all 12 sources, 186 tests, typecheck,
+and the scoped guard with zero forbidden privileges. There were no Discord sends
+or errors.
+
+The third automatic run,
+[38227198738](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/38227198738),
+created at **17:01:20 China time**, again passed all 12 sources, 186 tests,
+typecheck, and the scoped guard with zero forbidden privileges. Toronto paper
+actually succeeded in all three follow-up runs. None sent a Discord notification
+or reported a notification error. This completes three consecutive normal cycles
+on `0801da9`; none exercised a live temporary-connection failure.
+
+A final read-only transaction as `tcf_slot_monitor` at **17:02:36.279 China time**
+confirmed all 14 availability/reminder rows refreshed during the 17:01 cycle,
+excluding the separate health metadata row. Toronto paper recorded actual success
+at `2026-10-12T09:01:42.462Z`, with both incident markers null. Notification
+timestamps were unchanged from the 16:42 baseline; Winnipeg still held nine dates.
+
+No manual production dispatches, live local pipeline, credential changes, or
+broader infrastructure changes were used.
