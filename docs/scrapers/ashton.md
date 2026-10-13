@@ -3,13 +3,17 @@
 | | |
 |---|---|
 | **Platform** | WordPress/Elementor form (`ashtontesting.ca`) |
-| **Diff strategy** | 0→N transition |
+| **Diff strategy** | Per-date diff (user-approved October 13): each newly listed date/time label, including additions while others remain open |
 | **Page(s)** | `https://ashtontesting.ca/tcf-canada-test/` |
-| **Discord** | #ashton (bot "BonTCF Ashton Bot") |
+| **Discord** | #ashton (webhook "Ashton Bot", verified October 13 audit) |
 | **DB key** | city=`ashton`, exam_type=`TCF Canada` |
-| **Status** | October 9 source audit: no active dates; official mid-October release notice. Hidden-control repair passed two production cycles. |
+| **Status** | October 13 deep audit: current registration is closed, with the same mid-October release notice; no alternate bookable source found. Historical September checks had multi-hour gaps, so earlier complete coverage cannot be certified. See the [October 13 audit](../health-assessment-2026-10-13-ashton.md). |
 
 ## How it works
+- Alert for date/time labels absent from the previous complete successful
+  snapshot, even while other dates remain open. Unchanged or reordered lists
+  stay quiet. A failed send does not consume the new date; a date that disappears
+  and later returns can notify again. Identity uses the source's date/time label.
 - Ignore comments/scripts and explicitly hidden subtrees, including Elementor
   wrappers hidden on desktop, tablet, and mobile. A hidden stale picker must
   never mask a visible replacement select or generate availability.
@@ -42,6 +46,14 @@
   reason.
 
 ## Incident log
+- **2026-10-13** — Browser, public source/scripts, official FAQs, an older test
+  page, production logs, read-only state, and actual Discord history agree that
+  no current date is bookable. The FAQ says dates normally release mid-month.
+  September 14–20 had just 48 scheduled checks with a median 3h33m gap and maximum
+  5h53m gap; a brief opening could have escaped them, but retained snapshots do
+  not prove one did. Current five-minute timer addresses that sampling weakness.
+  User approved per-date alerts to close the separate potential 0→N gap. This
+  policy improvement is not proof of a historical missed date or a source repair.
 - **2026-10-09** — Independently followed the official booking link and inspected
   its rendered page, raw HTML, scripts, persisted state, and Discord history.
   The page announces additional November/December dates by mid-October. Its four

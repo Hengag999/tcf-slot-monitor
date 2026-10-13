@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { createSources, processCity, runMonitor, type CityConfig, type MonitorDependencies } from "../scripts/scrape-slots";
 import { TorontoPaperChallengeError, TorontoPaperTransportError } from "../scripts/scrapers/toronto";
 import { parseWinnipeg } from "../scripts/scrapers/winnipeg";
+import { parseAshton } from "../scripts/scrapers/ashton";
 import { HEALTH_CITY, HEALTH_EXAM_TYPE } from "../src/lib/torontoPaperHealth";
 import type { StateRow } from "../src/lib/db";
 
@@ -68,6 +69,64 @@ test("notify failure does not stop subsequent source and does not persist failed
 test("dry-run avoids database and Discord I/O", async () => {
   const fail = async () => { throw new Error("unexpected external I/O"); };
   await runMonitor([computer], true, { getPrevState: fail, upsertState: fail, notifyDiscord: fail, runRegistrationReminders: fail });
+});
+
+test("configured Ashton alerts for added dates while others remain open and never consumes an undelivered date", async () => {
+  const configured = createSources().find(source => source.key === "ashton")!;
+  assert.equal(configured.diffByDate, true);
+  assert.equal(configured.webhookEnv, "DISCORD_WEBHOOK_ASHTON");
+  const listing = (dates: string[]) => `<select name="form_fields[exma_date]"><option value=""></option>${dates.map(date => `<option value="${date}">${date}</option>`).join("")}</select>`;
+  const oldDate = "Nov 15th 9.00 am";
+  const newDate = "Nov 21st 9.00 am";
+  let html = listing([oldDate, newDate]);
+  const source = { ...configured, scrape: async () => parseAshton(html) };
+  let stored = parseAshton(listing([oldDate]));
+  let unavailable = true;
+  const delivered: string[][] = [];
+  const writes: boolean[] = [];
+  const io: MonitorDependencies = {
+    getPrevState: async city => {
+      assert.equal(city, "ashton");
+      return [{city, exam_type: "TCF Canada", slots: structuredClone(stored)}];
+    },
+    upsertState: async (city, type, slots, notified) => {
+      assert.equal(city, "ashton");
+      assert.equal(type, "TCF Canada");
+      stored = structuredClone(slots);
+      writes.push(notified);
+    },
+    notifyDiscord: async (_url, city, _type, slots) => {
+      assert.equal(city, "Ashton");
+      if (unavailable) throw new Error("Discord unavailable");
+      delivered.push(slots.map(slot => slot.date));
+    },
+    runRegistrationReminders: async () => assert.fail("Ashton uses availability, not reminders"),
+  };
+  const originalWebhook = process.env[source.webhookEnv];
+  process.env[source.webhookEnv] = "https://example.com/mock-ashton-webhook";
+  try {
+    await assert.rejects(runMonitor([source], false, io), /notify\/persist/);
+    assert.deepEqual(stored.map(slot => slot.date), [oldDate]);
+    assert.deepEqual(writes, []);
+    unavailable = false;
+    await runMonitor([source], false, io);
+    html = listing([newDate, oldDate]);
+    await runMonitor([source], false, io);
+    assert.deepEqual(delivered, [[newDate]]);
+    assert.deepEqual(writes, [true, false]);
+    html = "<p>Unknown registration layout</p>";
+    await assert.rejects(runMonitor([source], false, io), /ashton \(scrape\)/);
+    assert.deepEqual(stored.map(slot => slot.date), [newDate, oldDate]);
+    assert.deepEqual(writes, [true, false]);
+    html = listing([]);
+    await runMonitor([source], false, io);
+    html = listing([oldDate]);
+    await runMonitor([source], false, io);
+    assert.deepEqual(delivered, [[newDate], [oldDate]]);
+  } finally {
+    if (originalWebhook === undefined) delete process.env[source.webhookEnv];
+    else process.env[source.webhookEnv] = originalWebhook;
+  }
 });
 
 test("configured Winnipeg source forwards its published-data style and alerts only for new dates", async () => {

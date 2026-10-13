@@ -58,7 +58,7 @@ export function createSources(): CityConfig[] {
   { key: "vancouver", label: "Vancouver", scrape: async () => (await bcRows()).filter((row) => !/victoria/i.test(row.location)), webhookEnv: "DISCORD_WEBHOOK_VANCOUVER", reminderMode: true, zhLabel: "温哥华" },
   { key: "halifax", label: "Halifax", scrape: scrapeHalifax, webhookEnv: "DISCORD_WEBHOOK_HALIFAX" },
   { key: "ottawa", label: "Ottawa", scrape: scrapeOttawa, webhookEnv: "DISCORD_WEBHOOK_OTTAWA" },
-  { key: "ashton", label: "Ashton", scrape: scrapeAshton, webhookEnv: "DISCORD_WEBHOOK_ASHTON" },
+  { key: "ashton", label: "Ashton", scrape: scrapeAshton, webhookEnv: "DISCORD_WEBHOOK_ASHTON", diffByDate: true },
   { key: "northyork", label: "North York", scrape: scrapeNorthYork, webhookEnv: "DISCORD_WEBHOOK_NORTHYORK", diffByDate: true },
   { key: "victoria", label: "Victoria", scrape: scrapeVictoria, webhookEnv: "DISCORD_WEBHOOK_VICTORIA", reminderMode: true, zhLabel: "维多利亚", reminderOptions: { timeZone: "America/Vancouver", timeZoneLabel: "维多利亚时间" } },
   { key: "edmonton", source: "availability", label: "Edmonton", scrape: async () => bookableEdmontonSlots(await edmontonRows()), examTypes: ["TCF Canada"], webhookEnv: "DISCORD_WEBHOOK_EDMONTON", diffByDate: true },
