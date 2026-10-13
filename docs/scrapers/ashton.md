@@ -54,6 +54,11 @@
   not prove one did. Current five-minute timer addresses that sampling weakness.
   User approved per-date alerts to close the separate potential 0→N gap. This
   policy improvement is not proof of a historical missed date or a source repair.
+  Shipped as `3a36fdd` at October 14 00:06 China time. Three automatic runs at
+  00:11, 00:16, and 00:21 passed 187 tests and the scoped credential guard; Ashton
+  was OK in all three. Read-only state confirmed a fresh empty snapshot and an
+  unchanged August 19 notification timestamp. See the audit for run links and
+  the third cycle's unrelated accepted Toronto paper degradation.
 - **2026-10-09** — Independently followed the official booking link and inspected
   its rendered page, raw HTML, scripts, persisted state, and Discord history.
   The page announces additional November/December dates by mid-October. Its four

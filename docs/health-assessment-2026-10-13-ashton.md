@@ -84,6 +84,33 @@ snapshot, retry of only the new date, no repeated alert after reordering, unknow
 markup preserving state, and a valid closed-to-reopened transition. Independent
 review found no blockers.
 
-Production shipment and normal scheduled-run verification are pending. Since the
-live source has no open dates, the new-date notification behavior is verified by
-regression tests; a real future reopening still needs source/message comparison.
+## Production verification — October 14, China time
+
+Commit `3a36fdd` shipped at **00:06 China time**. Three consecutive automatic
+Cloudflare timer dispatches ran the new commit, each passing **187 tests**,
+typecheck, and the `tcf_slot_monitor` permission guard with **zero forbidden
+privileges**. No manual production run was dispatched.
+
+| Run | Created (UTC, October 13) | Job start–finish (UTC) | Real source outcomes |
+| --- | --- | --- | --- |
+| [38428418724](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/38428418724) | 16:11:15 | 16:11:20–16:11:57 | All 12 OK; Ashton 0 → 0 |
+| [38429109133](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/38429109133) | 16:16:15 | 16:16:19–16:16:52 | All 12 OK; Ashton 0 → 0 |
+| [38429795492](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/38429795492) | 16:21:13 | 16:21:18–16:21:52 | 11 OK, including Ashton 0 → 0; Toronto paper DEGRADED within its approved grace |
+
+The third run's Toronto paper response was the recognized SiteGround HTTP 202
+challenge, four minutes since success. It preserved the paper snapshot and did
+not meet the one-hour alert threshold. This is the existing intermittent issue,
+not an Ashton regression or proof of an upstream repair. Dispatch creation gaps
+were **5m00s** and **4m58s**.
+
+A final read-only transaction at **00:22:33.782 China time** authenticated as
+`tcf_slot_monitor` and found Ashton `slots=[]`, checked at
+`2026-10-13T16:21:44.929Z`, with its unchanged
+`notified_at=2026-08-19T05:49:02.069Z`. No Ashton notification was due or sent in
+these runs. No database baseline, webhook setting, or credential was modified by
+the audit.
+
+Post-deployment verification is complete. Since the live source has no open
+dates, the new-date notification behavior is verified by regression tests; a real
+future reopening still needs source/message comparison. Current healthy polling
+does not certify the historical silence or prove a fresh webhook delivery.
