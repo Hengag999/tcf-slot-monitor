@@ -6,7 +6,7 @@
 | API | Public examinations branch 1, types 5 (computer) and 79 (paper) |
 | State | City `ottawa`, separate `TCF Canada sur ordinateur` and `TCF Canada (papier)` rows |
 | Alerts | Zero-to-available per format; state advances only after accepted delivery |
-| Status | October 15 HTTP 500 recovered on the next automatic run; bounded server-error retries added |
+| Status | October 15 HTTP 500 recovered on the next automatic run; retry hardening shipped as `1d57bb8` and Ottawa passed three subsequent timer cycles |
 
 The shared AEC parser validates branch and exam identity, complete group arrays,
 dates/times, explicit availability flags, and allowed registration destinations.
@@ -24,3 +24,7 @@ notification strategy, Toronto's grace policy, or Halifax's behavior.
 See the [October 15 incident record](../health-assessment-2026-10-15.md) for exact
 failure/recovery runs, validation, and production verification. The site's own
 HTTP 500 cause remains unknown; a successful later response is recovery evidence.
+The three follow-up runs passed 191 tests and the scoped database guard. Ottawa
+returned the same six computer dates and one paper date without retries or
+duplicate notifications; a read-only check confirmed fresh state. The retry
+branch itself is regression-tested, not yet observed handling another live 500.

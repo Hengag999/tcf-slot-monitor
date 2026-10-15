@@ -20,8 +20,12 @@ failures do not establish whether the fault was in the runner network or at the
 remote host. The Winnipeg error cannot be assigned the same native cause.
 
 The metadata window **October 14 16:00–October 15 16:01 China time** contained
-**290 automatic runs: 288 successes and two failures**. Median creation interval
-was five minutes; the maximum was 5m49s. No extra production run was dispatched.
+**290 distinct workflow runs: 288 successes and two failures**. The first and
+last were created at October 14 16:01:18 and October 15 16:01:19. Median creation
+interval was five minutes; the maximum was 5m49s. One pair was only 26 seconds
+apart (October 14 19:51:05 and 19:51:31); the `workflow_dispatch` event alone does
+not establish whether that extra invocation was manual or timer-driven. No extra
+production run was dispatched by this investigation.
 
 A read-only transaction at **16:04:48.110 China time** found Ottawa's previous
 six computer dates and one paper date still present, last checked at 15:56:29.
@@ -56,4 +60,30 @@ fresh deadlines, response cleanup, immediate failure cases, and unchanged Halifa
 behavior. The old error cannot prove that a same-run retry would have recovered;
 only the next automatic run's recovery is observed live.
 
-Production shipment and post-deployment verification are pending.
+## Shipment and post-deployment verification
+
+Commit `1d57bb8` shipped to master. Three consecutive normal timer cycles ran it:
+
+| China time, October 15 | Run | Actual source outcomes |
+| --- | --- | --- |
+| 16:16:02 | [38704439426](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/38704439426) | All 12 OK; Ottawa seven dates, unchanged |
+| 16:20:58 | [38705015549](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/38705015549) | All 12 OK; Ottawa seven dates, unchanged |
+| 16:26:00 | [38705613372](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/38705613372) | Eleven OK, including Ottawa; Toronto paper recognized SiteGround HTTP 202 challenge, four minutes since success, within approved grace |
+
+Each passed **191 tests**, typecheck, and the scoped database guard with **zero
+forbidden privileges**. Creation intervals were 4m56s and 5m02s. No Ottawa retry
+or Discord notification occurred in these runs. Thus the retry branch is covered
+by regression tests, while normal production behavior is verified; it has not yet
+been exercised by another observed live HTTP 500.
+
+At **16:27:08.088 China time**, a final read-only transaction as
+`tcf_slot_monitor` found Ottawa's six computer dates checked at
+`08:26:27.612Z` and one paper date at `08:26:27.666Z`. All notification timestamps
+were unchanged from the 16:04 baseline. Thirteen of fourteen availability/reminder
+rows refreshed in the final cycle. Toronto paper appropriately retained its
+`08:21:22.566Z` snapshot; separate health metadata recorded last success at
+`08:21:22.593Z`, the first accepted degradation at `08:26:21.860Z`, and no
+failure-reported marker. Its known upstream challenge is not permanently fixed.
+
+This completes the post-deployment check. No credentials, grants, webhook
+configuration, notification grace policy, or unrelated infrastructure changed.
