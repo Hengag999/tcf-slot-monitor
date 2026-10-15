@@ -9,10 +9,11 @@ const SOURCE: AecSource = {
   label: "Ottawa", baseUrl: "https://afottawa.aec.app", branchId: 1,
   examTypes: [{ id: 5, name: "TCF Canada sur ordinateur" }, { id: 79, name: "TCF Canada (papier)" }],
   bookingOrigins: ["https://www.af.ca", "https://af.ca"],
+  retryServerErrors: true,
 };
 
-export async function scrapeOttawa(options: { fetchImpl?: typeof fetch } = {}): Promise<Slot[]> {
-  return scrapeAecExaminations(SOURCE, options.fetchImpl);
+export async function scrapeOttawa(options: { fetchImpl?: typeof fetch; sleep?: (ms: number) => Promise<void> } = {}): Promise<Slot[]> {
+  return scrapeAecExaminations(SOURCE, options.fetchImpl, options.sleep);
 }
 
 if (process.argv[1]?.endsWith("ottawa.ts")) {

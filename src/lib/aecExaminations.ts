@@ -22,6 +22,8 @@ export interface AecSource {
   branchId: number;
   examTypes: AecExamType[];
   bookingOrigins: string[];
+  // Opt in only where observed server failures justify bounded GET retries.
+  retryServerErrors?: boolean;
 }
 
 function object(value: unknown): value is Record<string, unknown> {
@@ -91,7 +93,11 @@ export function parseAecExaminations(body: string, status: number, source: AecSo
   return slots;
 }
 
-export async function scrapeAecExaminations(source: AecSource, fetchImpl: typeof fetch = fetch): Promise<AecSlot[]> {
+export async function scrapeAecExaminations(
+  source: AecSource,
+  fetchImpl: typeof fetch = fetch,
+  sleep: (ms: number) => Promise<void> = ms => new Promise(resolve => setTimeout(resolve, ms)),
+): Promise<AecSlot[]> {
   const page = await fetchImpl(`${source.baseUrl}/`, {
     headers: { "User-Agent": "Mozilla/5.0 (compatible; tcf-slot-monitor/1.0)" },
     signal: AbortSignal.timeout(20_000), redirect: "error",
@@ -102,10 +108,20 @@ export async function scrapeAecExaminations(source: AecSource, fetchImpl: typeof
 
   const groups = await Promise.all(source.examTypes.map(async (type) => {
     const url = `${source.baseUrl}/api/v1/public/examinations/list/${source.branchId}/${type.id}?allBranches=N&CURRENT_LANG=en_US`;
-    const response = await fetchImpl(url, {
-      headers: { API_KEY: match[1], CURRENT_LANG: "en_US" },
-      signal: AbortSignal.timeout(20_000), redirect: "error",
-    });
+    const attempts = source.retryServerErrors ? 3 : 1;
+    let response!: Response;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      response = await fetchImpl(url, {
+        headers: { API_KEY: match[1], CURRENT_LANG: "en_US" },
+        signal: AbortSignal.timeout(20_000), redirect: "error",
+      });
+      if (![500, 502, 503, 504].includes(response.status) || attempt === attempts) break;
+      // Release the discarded body. Cleanup must not obscure the HTTP failure.
+      await response.body?.cancel().catch(() => {});
+      console.warn(`[${source.label}] examinations type ${type.id}: HTTP ${response.status}; retry ${attempt}/${attempts - 1}`);
+      await sleep(attempt * 1000);
+    }
+    // Validation and non-server errors are not retried or treated as empty data.
     if (!response.ok) throw new Error(`${source.label}: examinations API returned ${response.status} for type ${type.id}`);
     return parseAecExaminations(await response.text(), response.status, source, type);
   }));

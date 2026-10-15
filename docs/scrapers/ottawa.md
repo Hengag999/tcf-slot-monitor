@@ -1,0 +1,26 @@
+# Ottawa scraper — source and failure handling
+
+| | |
+|---|---|
+| Platform | Alliance Française Ottawa AEC widget, `afottawa.aec.app` |
+| API | Public examinations branch 1, types 5 (computer) and 79 (paper) |
+| State | City `ottawa`, separate `TCF Canada sur ordinateur` and `TCF Canada (papier)` rows |
+| Alerts | Zero-to-available per format; state advances only after accepted delivery |
+| Status | October 15 HTTP 500 recovered on the next automatic run; bounded server-error retries added |
+
+The shared AEC parser validates branch and exam identity, complete group arrays,
+dates/times, explicit availability flags, and allowed registration destinations.
+Both formats must succeed for the scraper to return its combined snapshot. One
+failed endpoint preserves both prior formats. HTTP 204 and validated empty arrays
+are accepted empty states; blank HTTP 200 or malformed content is not.
+
+Ottawa alone opts into three attempts for examinations GET responses with HTTP
+500/502/503/504, with one- and two-second delays and fresh 20-second deadlines.
+The API-key page remains a single request. Authentication errors, rate limits,
+other statuses, transport exceptions, and parsing errors are not retried. A final
+failure stays visible and cannot clear availability. This does not change the
+notification strategy, Toronto's grace policy, or Halifax's behavior.
+
+See the [October 15 incident record](../health-assessment-2026-10-15.md) for exact
+failure/recovery runs, validation, and production verification. The site's own
+HTTP 500 cause remains unknown; a successful later response is recovery evidence.

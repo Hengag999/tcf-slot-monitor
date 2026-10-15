@@ -71,8 +71,87 @@ test("blank 200, objects and malformed group arrays reject instead of clearing a
 
 test("a malformed or failed Ottawa paper endpoint rejects the complete source even when computer succeeds", async () => {
   for (const body of ["{}", 503]) {
-    await assert.rejects(scrapeOttawa({ fetchImpl: fakeFetch({ "5": computer, "79": body }) }), /Ottawa:/);
+    await assert.rejects(scrapeOttawa({ fetchImpl: fakeFetch({ "5": computer, "79": body }), sleep: async () => {} }), /Ottawa:/);
   }
+});
+
+function ottawaSequence(sequence: Array<string | number | Error>, failedType = "5") {
+  const requests: string[] = [];
+  const sleeps: number[] = [];
+  const signals: AbortSignal[] = [];
+  const discarded: Response[] = [];
+  const valid = fakeFetch({ "5": computer, "79": paper }, requests);
+  let attempts = 0;
+  const fetchImpl = (async (input, options) => {
+    const path = new URL(String(input)).pathname;
+    if (!path.endsWith(`/list/1/${failedType}`)) return valid(input, options);
+    assert.equal(options?.redirect, "error");
+    assert.equal(new Headers(options?.headers).get("API_KEY"), "public-test-fixture");
+    assert.ok(options?.signal);
+    assert.ok(discarded.every(response => response.bodyUsed), "discarded responses released before retry");
+    signals.push(options.signal);
+    const outcome = sequence[attempts++];
+    assert.notEqual(outcome, undefined, "retry budget exceeded");
+    if (outcome instanceof Error) throw outcome;
+    if (typeof outcome === "number") {
+      const response = new Response("upstream error", { status: outcome });
+      discarded.push(response);
+      return response;
+    }
+    return new Response(outcome);
+  }) as typeof fetch;
+  return {
+    fetchImpl, requests, signals, sleeps,
+    sleep: async (ms: number) => { sleeps.push(ms); },
+    attempts: () => attempts,
+  };
+}
+
+test("Ottawa recovers selected server errors within the same complete scrape", async () => {
+  for (const sequence of [[500, computer], [502, 503, computer], [504, computer]]) {
+    const io = ottawaSequence(sequence);
+    const slots = await scrapeOttawa(io);
+    assert.equal(slots.length, 4);
+    assert.equal(io.attempts(), sequence.length);
+    assert.deepEqual(io.sleeps, sequence.length === 3 ? [1000, 2000] : [1000]);
+    assert.equal(new Set(io.signals).size, sequence.length, "fresh deadline for every attempt");
+    assert.deepEqual(io.requests, ["/", "/api/v1/public/examinations/list/1/79"]);
+  }
+});
+
+test("Ottawa exhausts at three server errors and never returns the other format alone", async () => {
+  const io = ottawaSequence([500, 500, 500], "79");
+  await assert.rejects(scrapeOttawa(io), /Ottawa: examinations API returned 500 for type 79/);
+  assert.equal(io.attempts(), 3);
+  assert.deepEqual(io.sleeps, [1000, 2000]);
+  assert.deepEqual(io.requests, ["/", "/api/v1/public/examinations/list/1/5"]);
+});
+
+test("Ottawa does not retry auth, rate limits, unknown server statuses, malformed data or transport failures", async () => {
+  for (const outcome of [401, 403, 404, 429, 501, 505, "{}", "not-json", new TypeError("fetch failed")]) {
+    const io = ottawaSequence([outcome]);
+    await assert.rejects(scrapeOttawa(io));
+    assert.equal(io.attempts(), 1);
+    assert.deepEqual(io.sleeps, []);
+  }
+  const mixed = ottawaSequence([500, "{}"]);
+  await assert.rejects(scrapeOttawa(mixed), /invalid examinations response/);
+  assert.equal(mixed.attempts(), 2);
+  assert.deepEqual(mixed.sleeps, [1000]);
+});
+
+test("Ottawa key discovery and Halifax retain single-request failure behavior", async () => {
+  for (const outcome of [500, "missing key"]) {
+    let calls = 0;
+    await assert.rejects(scrapeOttawa({
+      fetchImpl: (async () => { calls++; return typeof outcome === "number" ? new Response("error", { status: outcome }) : new Response(outcome); }) as typeof fetch,
+      sleep: async () => assert.fail("key discovery must not retry"),
+    }));
+    assert.equal(calls, 1);
+  }
+  const requests: string[] = [];
+  await assert.rejects(scrapeHalifax({ fetchImpl: fakeFetch({ "16": 503 }, requests) }), /examinations API returned 503/);
+  assert.deepEqual(requests, ["/", "/api/v1/public/examinations/list/1/16"]);
 });
 
 test("all validated matching groups are read instead of silently using only the first group", async () => {
