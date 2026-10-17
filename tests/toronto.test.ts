@@ -7,6 +7,9 @@ import { createSources, runMonitor, type MonitorDependencies } from "../scripts/
 const fixture = JSON.parse(readFileSync(new URL("./fixtures/toronto-child-candidates.json", import.meta.url), "utf8"));
 const hierarchy = JSON.parse(readFileSync(new URL("./fixtures/toronto-ac-hierarchy.json", import.meta.url), "utf8"));
 const nullChildIds = JSON.parse(readFileSync(new URL("./fixtures/toronto-null-child-ids.json", import.meta.url), "utf8"));
+// Minimal public hierarchy fields captured October 17. The child endpoint
+// returns both records on page 1 despite advertising two pages of one record.
+const completeChildren = JSON.parse(readFileSync(new URL("./fixtures/toronto-complete-child-pages-2026-10-17.json", import.meta.url), "utf8"));
 const item = (id = 123, format = "paper") => ({
   id, name: `${format === "computer" ? "E" : "P"}-TCF CANADA - 4 modules`,
   status: 0, open_spaces: 1, other_category: { id: format === "computer" ? 367 : 368 },
@@ -421,6 +424,62 @@ test("null ID discovery traverses every page and enforces its advertised total",
   });
   assert.deepEqual(await scrapeTorontoComputer(), []);
   assert.deepEqual(childPages, [1, 2]);
+});
+
+test("observed complete Toronto child collection is read once despite synthetic page count", async () => {
+  const calls = replaceFetch((url, init) => {
+    if (url.includes("/activities/list")) return response(acList([completeChildren.parent]));
+    assert.match(url, /\/activities\/subs\/129703\?/);
+    assert.equal(JSON.parse(new Headers(init?.headers).get("page_info")!).page_number, 1);
+    assert.equal(JSON.parse(String(init?.body)).sub_activity_ids, "129704,129705");
+    return response(completeChildren.childrenResponse);
+  });
+  assert.deepEqual(await scrapeTorontoComputer(), []);
+  assert.equal(calls.mock.calls.length, 2);
+});
+
+test("a complete child collection still requires concrete detail for an opening", async () => {
+  const listing = structuredClone(completeChildren.childrenResponse);
+  listing.body.sub_activities[1].urgent_message.status_description = "";
+  const details: string[] = [];
+  replaceFetch(url => {
+    if (url.includes("/activities/list")) return response(acList([completeChildren.parent]));
+    if (url.includes("/activities/subs")) return response(listing);
+    details.push(url);
+    assert.match(url, /\/activity\/detail\/129705\?/);
+    return response(detail(129705, "2 openings", "2026-10-30"));
+  });
+  assert.deepEqual(await scrapeTorontoComputer(), [{
+    id: "129705", examType: "E-TCF Canada", date: "2026-10-30", availableSeats: 2,
+    bookingUrl: "https://anc.ca.apm.activecommunities.com/aftoronto/activity/search/detail/129705",
+  }]);
+  assert.equal(details.length, 1);
+});
+
+test("complete child responses cannot bypass parent count, identity or uniqueness checks", async () => {
+  for (const change of [
+    (data: any) => { data.body.sub_activities[1].id = 129704; },
+    (data: any) => { data.body.sub_activities[1].id = 999999; },
+    (data: any) => { data.body.sub_activities[1].parent_activity = true; },
+    (data: any) => { data.body.sub_activities[1].name = "P-TCF CANADA - 4 modules"; },
+    (data: any) => { data.body.sub_activities.pop(); data.headers.page_info.total_records = 1; },
+  ]) {
+    const listing = structuredClone(completeChildren.childrenResponse);
+    change(listing);
+    replaceFetch(url => response(url.includes("/activities/list") ? acList([completeChildren.parent]) : listing));
+    await assert.rejects(scrapeTorontoComputer, /incomplete|duplicate|unexpected|malformed/);
+  }
+});
+
+test("the child endpoint exception never skips advertised top-level search pages", async () => {
+  const pages: number[] = [];
+  replaceFetch((_url, init) => {
+    const page = JSON.parse(new Headers(init?.headers).get("page_info")!).page_number;
+    pages.push(page);
+    return response(acList([activity(1), activity(2)], "activity_items", page, 2, 2));
+  });
+  await assert.rejects(scrapeTorontoComputer, /incomplete or duplicate/);
+  assert.deepEqual(pages, [1, 2]);
 });
 
 test("a parent with no children and a positive aggregate space count is never a candidate", async () => {

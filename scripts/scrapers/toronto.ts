@@ -285,6 +285,13 @@ async function fetchAcPages(path: string, body: unknown, field: "activity_items"
     totalPages = info.total_page;
     totalRecords = info.total_records;
     out.push(...validateAcItems(items, label));
+    // The public child endpoint can return the entire collection while reporting
+    // multiple pages (observed with two children and records-per-page=1). Its
+    // frontend consumes that collection once; requesting page 2 repeats it.
+    // Stop only when the first child response covers its declared total. The
+    // uniqueness check below and parent count/ID checks still prove completeness.
+    // Top-level search continues to require every advertised page.
+    if (field === "sub_activities" && page === 1 && out.length === totalRecords) break;
   }
   if (out.length !== totalRecords || new Set(out.map(item => item.id)).size !== out.length) {
     throw new Error(`${label}: incomplete or duplicate activities; availability unknown`);

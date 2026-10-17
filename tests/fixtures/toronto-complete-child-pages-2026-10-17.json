@@ -1,0 +1,55 @@
+{
+  "parent": {
+    "id": 129703,
+    "name": "E-TCF CANADA - 4 modules",
+    "number": "TCFC301026-OV",
+    "parent_activity": true,
+    "num_of_sub_activities": 2,
+    "sub_activity_ids": [
+      129704,
+      129705
+    ],
+    "urgent_message": {
+      "status_description": "On hold"
+    }
+  },
+  "childrenResponse": {
+    "headers": {
+      "response_code": "0000",
+      "page_info": {
+        "order_by": "",
+        "order_option": "ASC",
+        "total_page": 2,
+        "total_records_per_page": 1,
+        "total_records": 2,
+        "page_number": 1
+      }
+    },
+    "body": {
+      "sub_activities": [
+        {
+          "id": 129704,
+          "name": "E-TCF CANADA - 4 modules",
+          "number": "SCTCFC301026-OV",
+          "parent_activity": false,
+          "num_of_sub_activities": 0,
+          "sub_activity_ids": null,
+          "urgent_message": {
+            "status_description": "Full"
+          }
+        },
+        {
+          "id": 129705,
+          "name": "E-TCF CANADA - 4 modules",
+          "number": "SCTCFC301026.2-OV",
+          "parent_activity": false,
+          "num_of_sub_activities": 0,
+          "sub_activity_ids": null,
+          "urgent_message": {
+            "status_description": "Full"
+          }
+        }
+      ]
+    }
+  }
+}

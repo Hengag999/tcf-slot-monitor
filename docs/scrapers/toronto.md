@@ -7,7 +7,7 @@
 | **Page** | [Official registration page](https://www.alliance-francaise.ca/en/exams/tests/informations-about-tcf-canada/tcf-canada) |
 | **Discord** | #toronto |
 | **DB keys** | city=`toronto`, exam_type=`E-TCF Canada` and `P-TCF Canada` |
-| **Status** | **October 12 policy deployed:** confirmed temporary failures of the paper CM connection now share the existing one-hour grace with known SiteGround challenges. Unknown errors remain immediate failures. Both observed morning interruptions recovered on the next automatic run; the upstream cause remains unproven. See the [October 12 incident record](../health-assessment-2026-10-12.md) for verification. The October 10 computer discovery repair remains active. |
+| **Status** | **October 17 computer repair:** the child endpoint can return a complete collection while advertising multiple pages; subsequent pages repeat that collection. Stop after a complete first child response, retaining declared-total, parent-count, ID, type, and uniqueness validation. Live read-only discovery now returns four full sessions across three groups. See the [October 17 incident record](../health-assessment-2026-10-17.md) for shipment and scheduled verification. Paper retains its approved one-hour policy. |
 
 ## Current behavior
 
@@ -15,6 +15,13 @@
 - `scrapeTorontoPaper()` independently reads CM category 368 with the public site's filters and 300-row limit. The response must explicitly report page 1, the requested limit, and a total equal to the returned count, below 300. Missing/invalid metadata, duplicate IDs, wrong categories/formats, and records contradicting the requested status/open-space filters fail instead of becoming an empty snapshot. Paper discovery cannot be replaced with AC search because its hidden records are not covered there.
 - Explicitly closed computer child rows are not candidates. Every remaining computer candidate and every CM paper candidate must have a matching AC detail ID, explicit `is_parent_activity=false`, and readable `space_status`. Unexpected parent detail fails the source rather than producing a false alert. At most five detail requests run concurrently. Dates prefer detail `first_date`, falling back to the validated concrete AC activity number or CM sitting date. Reported seat counts come from confirmed AC detail.
 - The orchestrator calls these independently and restricts each snapshot to its own exam type. A failed paper source must preserve its previous row and must not prevent computer monitoring. Returning an unscoped partial Toronto array would be unsafe: missing exam types would otherwise be cleared by the orchestrator.
+- Child discovery stops after the first response only if its validated child
+  array already covers the declared record total. The official frontend consumes
+  that full collection once; the observed endpoint repeats it on later page
+  requests despite synthetic pagination metadata. Unique IDs, the parent child
+  count, and any explicit advertised ID list must still match. A genuinely partial
+  child response still requires all pages; top-level search always follows its
+  advertised pages. Duplicate, missing, wrong-format, or nested children fail.
 - The retained `scrapeToronto()` aggregate rejects if either source fails. The standalone script uses both independent sources, prints each outcome and surviving results, and exits nonzero if coverage is incomplete.
 - Requests have a 20-second timeout and at most three attempts. Network failures, HTTP 429/5xx, and non-JSON responses are retried. Other HTTP errors such as 403 fail immediately. Requests identify themselves as `TCF-Slot-Monitor/1.0 (+https://github.com/Hengag999/tcf-slot-monitor)`; no cookies, clearance tokens, or browser runtime are required for the verified local result.
   The recognized CM paper HTTP 202 HTML SiteGround challenge is now an exception:
