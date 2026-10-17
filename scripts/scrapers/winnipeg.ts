@@ -71,7 +71,7 @@ function parseSession(value: string): { date: string; seats: number } {
   return { date, seats };
 }
 
-function publishedDatesWithoutCounts(rest: string): Slot[] {
+function publishedDateList(rest: string): Slot[] {
   // The centre formats the same positive announcement as headings with <br>
   // or individual paragraphs. Source-code whitespace is not a date boundary;
   // rendered block boundaries are. Inline emphasis must not split a date.
@@ -89,12 +89,15 @@ function publishedDatesWithoutCounts(rest: string): Slot[] {
     || !/^Registration(?: Registration)?$/.test(lines.slice(boundaries[0] + 1).join(" "))) {
     throw new Error("Winnipeg: published dates disclaimer or registration boundary changed; state must be preserved");
   }
-  const dates = lines.slice(bannerEnd + 1, boundaries[0]).map(parseDate);
-  if (new Set(dates).size !== dates.length) throw new Error("Winnipeg: duplicate session date is ambiguous");
-  return dates.map(date => ({
+  const sessions = lines.slice(bannerEnd + 1, boundaries[0]).map(line =>
+    line.includes("(") ? parseSession(line) : { date: parseDate(line), seats: undefined });
+  // Check every listed date, including closed rows, before filtering. A duplicate
+  // open/closed pair is conflicting evidence, not a usable partial snapshot.
+  if (new Set(sessions.map(session => session.date)).size !== sessions.length) throw new Error("Winnipeg: duplicate session date is ambiguous");
+  return sessions.filter(session => session.seats === undefined || session.seats > 0).map(({date, seats}) => ({
     id: `winnipeg-${date.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
     examType: "TCF Canada", date, bookingUrl: WINNIPEG_REGISTRATION,
-    // The source says places are available but does not publish seat counts.
+    ...(seats === undefined ? {} : { availableSeats: seats }),
   }));
 }
 
@@ -135,7 +138,7 @@ export function parseWinnipeg(html: string): Slot[] {
   const rest = section.slice(start);
   const boundary = [...rest.matchAll(/<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]\s*>/gi)]
     .find(heading => /^(?:Next dates will be announced on|Important information)$/i.test(text(heading[1])));
-  if (!boundary) return publishedDatesWithoutCounts(rest);
+  if (!boundary) return publishedDateList(rest);
   const listing = rest.slice(0, boundary.index);
   const slots: Slot[] = [];
   const dates = new Set<string>();

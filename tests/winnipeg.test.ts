@@ -7,6 +7,7 @@ import { formatSlotNotification } from "../src/lib/discord";
 const observed = readFileSync(new URL("./fixtures/winnipeg-next-sessions.html", import.meta.url), "utf8");
 const publishedDates = readFileSync(new URL("./fixtures/winnipeg-published-dates-2026-10-10.html", import.meta.url), "utf8");
 const paragraphDates = readFileSync(new URL("./fixtures/winnipeg-paragraph-dates-2026-10-11.html", import.meta.url), "utf8");
+const countedParagraphs = readFileSync(new URL("./fixtures/winnipeg-counted-paragraphs-2026-10-17.html", import.meta.url), "utf8");
 const page = (sessions: string, options: { context?: string; registration?: string; boundary?: string } = {}) =>
   `<h2>${options.context ?? "TCF CANADA"}</h2><section><h2>Next sessions</h2>${sessions}`
   + `<h2>${options.boundary ?? "Next dates will be announced on"}</h2><h2>October 09, 2026 at 5 PM</h2>`
@@ -62,7 +63,7 @@ test("Winnipeg's uncounted date list requires positive availability and exact bo
 test("Winnipeg's uncounted date list rejects impossible or duplicate dates and has no implicit empty result", () => {
   assert.throws(() => parseWinnipeg(publishedDates.replace("Nov.19", "Nov.31")), /invalid session date/);
   assert.throws(() => parseWinnipeg(publishedDates.replace("Nov.23", "November 19")), /duplicate/);
-  assert.throws(() => parseWinnipeg(publishedDates.replace("Dec.04", "Dec.04 (full)")), /unrecognized session date/);
+  assert.throws(() => parseWinnipeg(publishedDates.replace("Dec.04", "Dec.04 (waitlist)")), /unrecognized session date/);
   const noDates = publishedDates.replace(/Nov\.19[\s\S]*?Dec\.04/, "");
   assert.throws(() => parseWinnipeg(noDates), /boundary changed/);
   const outside = "<h3>January 1 (99 spots available)</h3>";
@@ -98,7 +99,7 @@ test("Winnipeg paragraph layout still rejects unknown, contradictory, hidden and
   const variants = [
     paragraphDates.replace("spots available!", "No spots available!"),
     paragraphDates.replace("spots available!", "spots available soon!"),
-    paragraphDates.replace("Oct.20", "Oct.20 (full)"),
+    paragraphDates.replace("Oct.20", "Oct.20 (waitlist)"),
     paragraphDates.replace("Oct.20", "Oct.20<br>Waitlist only"),
     paragraphDates.replace("Oct.20", "Nov.19"),
     paragraphDates.replace("Oct.20", "Oct.32"),
@@ -130,6 +131,41 @@ test("Winnipeg preserves state for explicitly hidden sections, banners, dates, o
     }
   }
   assert.throws(() => parseWinnipeg(observed.replace("<section ", "<section hidden ")), /explicitly hidden/);
+});
+
+test("Winnipeg's observed counted paragraphs exclude sold-out dates and retain published counts", async () => {
+  const slots = await scrapeWinnipeg({fetchImpl: async () => htmlResponse(countedParagraphs)});
+  assert.deepEqual(slots.map(slot => [slot.date,slot.availableSeats]), [["November 24",1],["November 25",4]]);
+  const previous = parseWinnipeg(paragraphDates);
+  for (const slot of slots) {
+    assert.equal(slot.id, previous.find(old => old.date === slot.date)!.id);
+    assert.equal(slot.bookingUrl, WINNIPEG_REGISTRATION);
+    assert.ok(!/20\d\d/.test(slot.date), "missing years remain absent");
+  }
+});
+
+test("Winnipeg supports mixed published dates and explicit counts while checking closed-date duplicates", () => {
+  const mixed = countedParagraphs.replace("(1 spot available)", "");
+  assert.deepEqual(parseWinnipeg(mixed).map(slot => [slot.date,slot.availableSeats]), [["November 24",undefined],["November 25",4]]);
+  const closed = countedParagraphs.replace("(1 spot available)", "(Sold Out)").replace("(4 spots available)", "(0 spots available)");
+  assert.deepEqual(parseWinnipeg(closed), []);
+  for (const label of ["(Full)","(Closed)"]) {
+    assert.equal(parseWinnipeg(countedParagraphs.replaceAll("(Sold Out)", label)).length, 2);
+  }
+  assert.throws(() => parseWinnipeg(countedParagraphs.replace("Nov.19", "Nov.24")), /duplicate/);
+});
+
+test("Winnipeg counted paragraphs retain unknown, hidden and bounded-context rejection", () => {
+  for (const status of ["(available)","(1 spot available soon)","(-1 spots available)","(1.5 spots available)","(Waitlist)"]) {
+    assert.throws(() => parseWinnipeg(countedParagraphs.replace("(1 spot available)",status)), /Winnipeg:/);
+  }
+  for (const html of [
+    countedParagraphs.replace("spots available!", "No spots available!"),
+    countedParagraphs.replace("Cancellations for climatic or personal reasons are not possible.", ""),
+    countedParagraphs.replace("Nov.24", "Nov.31"),
+    countedParagraphs.replace("(1 spot available)", '<span hidden>(1 spot available)</span>'),
+    countedParagraphs.replace(WINNIPEG_REGISTRATION, "https://other.example/register"),
+  ]) assert.throws(() => parseWinnipeg(html), /Winnipeg:/);
 });
 
 test("Winnipeg hidden-markup guard is scoped to the selected section and actual attributes", () => {

@@ -42,6 +42,12 @@ session entries and narrowly recognized empty notices can produce an empty
 snapshot; a blank section cannot. Empty-state variants have regression coverage
 but had not been observed live at initial deployment.
 
+Since October 17, the bounded paragraph list also accepts the existing explicit
+session statuses: positive numeric seat counts are retained, while Sold Out,
+Full, Closed, or zero seats are excluded. Bare dates remain supported under the
+positive banner. Duplicate dates are checked before removing closed entries;
+unknown annotations still fail. See the [October 17 late incident](../health-assessment-2026-10-17-winnipeg.md).
+
 Winnipeg messages say **官网公布余位**, include both official links, and explain
 the year/registration limitations. They do not claim a reservation is confirmed.
 Seat-count changes alone do not repeat a date's alert. New or returning dates
