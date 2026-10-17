@@ -26,6 +26,17 @@ stored openings. Other centres' rows refreshed during the 13:15 cycle. Paper
 retained its separate most recent successful snapshot during its known challenge.
 No failed scrape replaced availability with an empty result.
 
+One earlier failure outside this continuous burst was also checked:
+[38887722217](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/38887722217),
+October 16 at **18:30:49 China time**, timed out while posting one new North York
+paper date to Discord. The pending state was retained. The next automatic run,
+[38888254548](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/38888254548),
+at **18:35:39**, retried that date and logged confirmed Discord message
+`1560602253767872532` at **18:36:12.824** before persistence. The first timed-out
+request's delivery is unknown; no assertion of exactly-once delivery is made.
+This recovered delivery issue does not justify blindly retrying ambiguous POSTs
+or suppressing notification errors. No change to that path was made.
+
 ## Root cause and public source verification
 
 The live public category-30 search now has three computer parent groups. Parent
@@ -60,4 +71,33 @@ opening, rejection of duplicate/missing/foreign/nested/wrong-format children, an
 continued top-level pagination. Existing tests retain partial-child pagination
 and failed-source state preservation.
 
-Production shipment and normal scheduled verification are pending.
+## Production verification
+
+Commit `65ce999` shipped before the next normal timer cycle. Three consecutive
+scheduled runs passed **195 tests**, typecheck, the scoped database guard with
+**zero forbidden privileges**, and all **12 actual sources**:
+
+| Creation time, China time | Run | Toronto computer |
+| --- | --- | --- |
+| October 17 13:20:32 | [39005906506](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/39005906506) | OK; three parent groups, four concrete sessions, zero openings |
+| October 17 13:25:32 | [39006209269](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/39006209269) | OK; same complete closed result |
+| October 17 13:30:36 | [39006518571](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/39006518571) | OK; same complete closed result |
+
+A read-only query at **13:22:02.857 China time** confirmed computer
+`checked_at=2026-10-17T05:20:50.419Z`, advancing from the previous night's frozen
+snapshot. Paper refreshed at `05:20:50.731Z`. Neither notification timestamp
+changed. No manual production dispatch, local live pipeline, or state overwrite
+was used.
+
+The final read-only transaction at **13:31:51.216 China time** authenticated as
+`tcf_slot_monitor` and confirmed all **14 availability/reminder rows** refreshed
+between `05:30:57.527Z` and `05:31:15.787Z`, excluding health metadata. Computer
+and paper retained zero openings and their original notification timestamps.
+Paper's separate health record showed actual success at `05:30:57.749Z`, with
+both incident markers null. All 12 sources actually succeeded in all three runs;
+none used paper grace, and no Discord message was sent during verification.
+
+Observed creation intervals were **5m00s** and **5m04s**. This completes the
+post-deployment check. The repair corrects the demonstrated complete-child
+response shape; it does not reconstruct availability during the earlier outage
+or guarantee the provider will never change its API again.

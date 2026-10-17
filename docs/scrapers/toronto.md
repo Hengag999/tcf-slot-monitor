@@ -7,7 +7,7 @@
 | **Page** | [Official registration page](https://www.alliance-francaise.ca/en/exams/tests/informations-about-tcf-canada/tcf-canada) |
 | **Discord** | #toronto |
 | **DB keys** | city=`toronto`, exam_type=`E-TCF Canada` and `P-TCF Canada` |
-| **Status** | **October 17 computer repair:** the child endpoint can return a complete collection while advertising multiple pages; subsequent pages repeat that collection. Stop after a complete first child response, retaining declared-total, parent-count, ID, type, and uniqueness validation. Live read-only discovery now returns four full sessions across three groups. See the [October 17 incident record](../health-assessment-2026-10-17.md) for shipment and scheduled verification. Paper retains its approved one-hour policy. |
+| **Status** | **October 17 repair `65ce999` deployed:** complete child collections are consumed once despite misleading page counts. Three consecutive timer runs passed 195 tests, the scoped guard, and all 12 sources; read-only state confirms recovery. Current computer discovery covers four full sessions across three groups. See the [October 17 incident record](../health-assessment-2026-10-17.md). Paper retains its approved one-hour policy. |
 
 ## Current behavior
 
