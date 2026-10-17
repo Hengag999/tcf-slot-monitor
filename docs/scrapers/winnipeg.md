@@ -183,6 +183,18 @@ Prior date IDs stay identical, so only October 20 is newly eligible for an alert
 See the [October 11 incident record](../health-assessment-2026-10-11.md) for the
 Mail-backed diagnosis, regression tests, and production verification.
 
+## October 17 annotated paragraph dates — verified recovery
+
+Commit `c44ba6d` handles the observed mix of Sold Out and positive seat counts
+inside the existing paragraph announcement. Three automatic runs on October 18
+at 00:05:31, 00:10:39, and 00:15:32 China time passed 198 tests, typecheck, and
+the scoped database guard with zero forbidden privileges. Winnipeg updated
+8 → 2, then remained 2 → 2 twice without a repeat notification. The final run
+passed all 12 sources; Toronto paper had been in its approved challenge grace
+on the first two. Read-only state confirmed November 24 (1 published place) and
+November 25 (4), fresh timestamps, and unchanged notification time. See the
+[incident and production evidence](../health-assessment-2026-10-17-winnipeg.md).
+
 ## Read-only debugging
 
 ```bash
