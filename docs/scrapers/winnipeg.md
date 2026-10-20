@@ -208,3 +208,14 @@ SELECT city, exam_type, slots, checked_at, notified_at
 FROM public.slot_monitor_state
 WHERE city = 'winnipeg';
 ```
+
+## October 20 next-release-only card
+
+The centre removed all dates and the positive banner, leaving a complete inline
+notice announcing its next release on Friday, October 23rd at 5:00pm. The new
+branch accepts only the whole validated notice card, including the existing
+warning, disclaimer and registration link, as no currently published sessions.
+A blank or unknown section still fails; the release notice is never an exam
+sitting or inferred reminder timestamp. See the
+[October 20 incident record](../health-assessment-2026-10-20.md) for production
+verification and the captured public fixture.

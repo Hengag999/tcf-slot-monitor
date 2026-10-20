@@ -71,6 +71,17 @@ function parseSession(value: string): { date: string; seats: number } {
   return { date, seats };
 }
 
+function isAnnouncementOnly(rest: string): boolean {
+  // The observed card removes both the positive banner and all sitting dates,
+  // leaving one complete next-release notice. A blank list alone is unknown.
+  // Match the entire card so no date, availability, or unexplained text is lost.
+  const announcement = text(rest).match(/^NO MU(?:L)?TIPLE REGISTRATIONS FOR THE SAME CANDIDATE!\s+New dates:\s+New dates will be announced on\s+(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s+([a-z]+)\s+(\d{1,2}(?:st|nd|rd|th)?)\s+at\s+(?:[1-9]|1[0-2]):[0-5]\d\s*(?:am|pm)\s+No refund or deferment is possible\. Cancellations for climatic or personal reasons are not possible\.\s+Registration(?: Registration)?$/i);
+  if (!announcement) return false;
+  parseDate(`${announcement[1]} ${announcement[2]}`);
+  // This is a release notice, never an exam date, reminder epoch, or inferred year.
+  return true;
+}
+
 function publishedDateList(rest: string): Slot[] {
   // The centre formats the same positive announcement as headings with <br>
   // or individual paragraphs. Source-code whitespace is not a date boundary;
@@ -138,7 +149,7 @@ export function parseWinnipeg(html: string): Slot[] {
   const rest = section.slice(start);
   const boundary = [...rest.matchAll(/<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]\s*>/gi)]
     .find(heading => /^(?:Next dates will be announced on|Important information)$/i.test(text(heading[1])));
-  if (!boundary) return publishedDateList(rest);
+  if (!boundary) return isAnnouncementOnly(rest) ? [] : publishedDateList(rest);
   const listing = rest.slice(0, boundary.index);
   const slots: Slot[] = [];
   const dates = new Set<string>();

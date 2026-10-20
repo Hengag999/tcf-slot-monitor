@@ -8,6 +8,7 @@ const observed = readFileSync(new URL("./fixtures/winnipeg-next-sessions.html", 
 const publishedDates = readFileSync(new URL("./fixtures/winnipeg-published-dates-2026-10-10.html", import.meta.url), "utf8");
 const paragraphDates = readFileSync(new URL("./fixtures/winnipeg-paragraph-dates-2026-10-11.html", import.meta.url), "utf8");
 const countedParagraphs = readFileSync(new URL("./fixtures/winnipeg-counted-paragraphs-2026-10-17.html", import.meta.url), "utf8");
+const announcementOnly = readFileSync(new URL("./fixtures/winnipeg-announcement-only-2026-10-20.html", import.meta.url), "utf8");
 const page = (sessions: string, options: { context?: string; registration?: string; boundary?: string } = {}) =>
   `<h2>${options.context ?? "TCF CANADA"}</h2><section><h2>Next sessions</h2>${sessions}`
   + `<h2>${options.boundary ?? "Next dates will be announced on"}</h2><h2>October 09, 2026 at 5 PM</h2>`
@@ -142,6 +143,35 @@ test("Winnipeg's observed counted paragraphs exclude sold-out dates and retain p
     assert.equal(slot.bookingUrl, WINNIPEG_REGISTRATION);
     assert.ok(!/20\d\d/.test(slot.date), "missing years remain absent");
   }
+});
+
+test("Winnipeg's observed complete next-release-only card has no published exam sessions", async () => {
+  assert.deepEqual(await scrapeWinnipeg({fetchImpl: async () => htmlResponse(announcementOnly)}), []);
+  assert.deepEqual(parseWinnipeg(announcementOnly.replace(/\s+/g, " ")), []);
+  assert.deepEqual(parseWinnipeg(announcementOnly.replace("Friday, October 23rd at 5:00pm", "Monday, November 2nd at 10:30 am")), []);
+});
+
+test("Winnipeg next-release-only state rejects incomplete, conflicting and unknown content", () => {
+  for (const [from, to] of [
+    ["Friday, October 23rd at 5:00pm", "Friday, October 32nd at 5:00pm"],
+    ["Friday, October 23rd at 5:00pm", "Friday, Bogus 23rd at 5:00pm"],
+    ["Friday, October 23rd at 5:00pm", "Friday, October 23rd at 25:00pm"],
+    ["Friday, October 23rd at 5:00pm", "Friday, October 23rd at 5:60pm"],
+    ["Friday, October 23rd at 5:00pm", "soon"],
+    ["New dates will be announced on", "Dates may be announced on"],
+    ["New dates:", "New dates: spots available!"],
+    ["New dates:", "New dates: Nov.24 (1 spot available)"],
+    ["New dates:", "New dates: All sessions are full"],
+    ["New dates:", "New dates: Unpublished sessions exist"],
+    ["Cancellations for climatic or personal reasons are not possible.", ""],
+    ["<section ", "<section hidden "],
+    [WINNIPEG_REGISTRATION, "https://other.example/register"],
+  ]) {
+    const changed = announcementOnly.replace(from, to);
+    assert.notEqual(changed, announcementOnly, "negative mutation must take effect");
+    assert.throws(() => parseWinnipeg(changed), /Winnipeg:/);
+  }
+  assert.throws(() => parseWinnipeg(announcementOnly.replace(/<h3><span[^>]*><strong>New dates will be announced on[\s\S]*?<\/h3>/, "")), /Winnipeg:/);
 });
 
 test("Winnipeg supports mixed published dates and explicit counts while checking closed-date duplicates", () => {
