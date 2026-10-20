@@ -219,3 +219,11 @@ A blank or unknown section still fails; the release notice is never an exam
 sitting or inferred reminder timestamp. See the
 [October 20 incident record](../health-assessment-2026-10-20.md) for production
 verification and the captured public fixture.
+
+Commit `b01bc49` passed 200 tests, typecheck and the scoped guard in three normal
+runs at 11:25:25, 11:30:26 and 11:35:26 China time. Winnipeg passed all three with
+0 → 0 and no notification. The first and third runs passed all 12 sources;
+Toronto paper was in its approved challenge grace on the middle run. Final
+read-only state verified Winnipeg's timestamp had resumed updating, its prior
+notification timestamp was unchanged, and all 14 availability/reminder rows
+were fresh. This completes verification of the observed release-only state.
