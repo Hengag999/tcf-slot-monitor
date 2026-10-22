@@ -195,3 +195,35 @@ unchanged, with no failure issued yet. Ottawa and Toronto paper health recorded
 actual success with null incident markers. The hour threshold and following
 suppression are still pending; this unchanged, non-actionable state did not
 trigger a user notification. The temporary follow-up remains active.
+
+### Live hour threshold and repeat suppression verified — 12:17 China time
+
+All three automatic runs below used descendant `11eca95` with the final
+`a569c75` policy. Each passed **213 tests**, typecheck, and the scoped credential
+guard with **zero forbidden privileges**, inspecting 84 other relations and 43
+sequences. The other eleven sources were OK in each run.
+
+| Run creation (China time) | Run | Actual Halifax decision | Workflow |
+| --- | --- | --- | --- |
+| 12:05:12 | [39720384517](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/39720384517) | HTTP 522; one-hour outage alert issued at 12:06:37.297, 60 minutes without success | Failed only for the approved one-time outage alert |
+| 12:10:13 | [39720858916](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/39720858916) | HTTP 522; outage already reported; repeats suppressed, 65 minutes without success | Success with explicit DEGRADED Halifax |
+| 12:15:12 | [39721336388](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/39721336388) | HTTP 522; same incident; repeats suppressed, 70 minutes without success | Success with explicit DEGRADED Halifax |
+
+Creation intervals were 5 minutes 1 second and 4 minutes 59 seconds. This also
+observes 521 changing back to 522 without resetting the shared outage baseline.
+It establishes exactly one workflow failure and two suppressed repeats, not a
+receipt for delivery of a GitHub email.
+
+A read-only transaction at `2026-10-22T04:17:17.802Z`, as `tcf_slot_monitor`,
+confirmed the original Halifax snapshot timestamp `03:05:50.641Z`, original
+notification timestamp and `firstChallengeAt=03:55:39.004Z` were preserved.
+`failureReportedAt=04:06:37.297Z` persisted across both later runs. Other 13
+availability/reminder rows were fresh in the 12:15 cycle; Ottawa and Toronto
+paper health recorded actual success with null incident markers.
+
+The live grace, hour-threshold and repeat-suppression checks are now complete.
+Halifax's upstream outage is **not recovered**; these degraded successes do not
+satisfy the three-healthy-run stop condition. The temporary follow-up remains
+active for actual recovery, new actionable failures or the bounded 24-hour
+upstream-action condition. No code, grants, credentials or production state
+were changed during this check.

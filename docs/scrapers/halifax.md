@@ -72,3 +72,9 @@ metadata and preserved stale snapshot, while Ottawa recorded actual success.
 The hour-threshold transition, repeat suppression and eventual upstream recovery
 remain under the temporary 15-minute follow-up. A green grace run is not source
 recovery. See the incident record for exact evidence and limits.
+
+The live threshold was verified on October 22: run `39720384517` issued the one
+outage failure at 12:06:37 China time; `39720858916` and `39721336388` suppressed
+repeats while Halifax stayed explicitly DEGRADED. All 213 tests, typecheck,
+scoped guard and eleven other sources passed in each. Read-only state retained
+the original snapshot and incident marker. Upstream recovery remains pending.
