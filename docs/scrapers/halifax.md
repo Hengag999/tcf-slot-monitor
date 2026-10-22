@@ -78,3 +78,13 @@ outage failure at 12:06:37 China time; `39720858916` and `39721336388` suppresse
 repeats while Halifax stayed explicitly DEGRADED. All 213 tests, typecheck,
 scoped guard and eleven other sources passed in each. Read-only state retained
 the original snapshot and incident marker. Upstream recovery remains pending.
+
+**Recovery verified October 22 at 12:36 China time:** normal runs
+`39722268538`, `39722736254` and `39723199629` (12:25, 12:30, 12:35) each passed
+all 12 sources, 213 tests, typecheck and the scoped guard with zero forbidden
+privileges. Halifax actually scraped and persisted successfully, requiring no
+retry; its health incident reset after complete persistence. Final read-only
+state confirmed a fresh validated empty snapshot and unchanged notification
+time. The temporary recovery automation was deleted; production monitoring and
+the approved outage policy remain active. This is observed upstream recovery,
+not a permanent repair to the centre's server.

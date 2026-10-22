@@ -59,3 +59,9 @@ metadata and preserved stale snapshot, while Ottawa recorded actual success.
 The hour-threshold transition, repeat suppression and eventual upstream recovery
 remain under the temporary 15-minute follow-up. A green grace run is not source
 recovery. See the incident record for exact evidence and limits.
+
+The shared AEC follow-up completed after October 22 runs `39722268538`,
+`39722736254` and `39723199629` passed all 12 sources, 213 tests, typecheck and
+the scoped guard with zero forbidden privileges. Read-only state confirmed
+both Ottawa formats fresh and incident markers null, alongside actual Halifax
+recovery. The temporary automation was deleted; production monitoring continues.

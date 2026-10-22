@@ -227,3 +227,38 @@ satisfy the three-healthy-run stop condition. The temporary follow-up remains
 active for actual recovery, new actionable failures or the bounded 24-hour
 upstream-action condition. No code, grants, credentials or production state
 were changed during this check.
+
+### Actual source recovery and completion — 12:36 China time
+
+The 12:20 run `39721803422` still showed Halifax HTTP 521 with the existing
+reported incident and suppressed repeats; the status change did not rearm it.
+Actual Halifax recovery was first observed in the **12:25** automatic cycle.
+Three consecutive ordinary runs on descendant `27736df` then passed **all 12
+real sources**, **213 tests**, typecheck and the scoped database guard with
+**zero forbidden privileges** (84 other relations and 43 sequences inspected):
+
+| Run creation (China time) | Run | Sources |
+| --- | --- | --- |
+| 12:25:12 | [39722268538](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/39722268538) | 12/12 OK; Halifax actual scrape returned zero published bookable slots |
+| 12:30:16 | [39722736254](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/39722736254) | 12/12 OK; Halifax successful again |
+| 12:35:12 | [39723199629](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/39723199629) | 12/12 OK; Halifax successful again |
+
+Creation intervals were 5 minutes 4 seconds and 4 minutes 56 seconds. Halifax
+needed no retry in these recovery cycles and no new availability notification
+was due. These were successful scrapes and persistence, not degraded green jobs.
+
+Final read-only verification at `2026-10-22T04:36:56.358Z` authenticated as
+`tcf_slot_monitor`. All **14 availability/reminder rows**, excluding health
+metadata, refreshed in the final cycle between `04:35:32.666Z` and
+`04:35:43.061Z`. Halifax held the validated empty result with
+`checked_at=04:35:37.249Z` and unchanged
+`notified_at=2026-09-28T15:04:14.680Z`. Its health row recorded actual success
+at `04:35:37.271Z`, with `firstChallengeAt` and `failureReportedAt` both null.
+Ottawa and Toronto paper health also showed actual success and null markers.
+
+The temporary `tcf-aec-outage-recovery` automation was **deleted** after this
+three-cycle recovery verification. Production Cloudflare/GitHub monitoring and
+the approved alert policy remain active. No code, production-state writes,
+credentials, grants or infrastructure changes were needed for recovery. The
+upstream recovered independently; these observations do not establish a
+permanent repair to its server. The incident follow-up is complete.
