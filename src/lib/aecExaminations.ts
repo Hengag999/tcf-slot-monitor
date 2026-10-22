@@ -28,6 +28,15 @@ export interface AecSource {
   retryKeyPage522?: boolean;
 }
 
+// Only an exhausted, confirmed key-page HTTP 522 can enter the approved grace.
+// Network exceptions, other responses, key parsing and inventory errors cannot.
+export class AecKeyPage522Error extends Error {
+  constructor(readonly origin: string, label: string) {
+    super(`${label}: failed to fetch page for API key (522)`);
+    this.name = "AecKeyPage522Error";
+  }
+}
+
 function object(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -112,6 +121,7 @@ export async function scrapeAecExaminations(
     console.warn(`[${source.label}] API-key page: HTTP 522; retry ${attempt}/${pageAttempts - 1}`);
     await sleep(attempt * 1000);
   }
+  if (page.status === 522 && source.retryKeyPage522) throw new AecKeyPage522Error(source.baseUrl, source.label);
   if (!page.ok) throw new Error(`${source.label}: failed to fetch page for API key (${page.status})`);
   const match = (await page.text()).match(/"APIKEY":"([^"]+)"/);
   if (!match) throw new Error(`${source.label}: APIKEY not found in page source`);

@@ -51,3 +51,47 @@ were changed.
 Shipment and normal scheduled verification remain pending. This hardening cannot
 repair the centre's origin server; successful retries/recovery must be observed
 rather than inferred from tests.
+
+## First production retry evidence and approved alert policy
+
+Commit `b13fd3a` shipped the bounded retries. Automatic run
+[39717653536](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/39717653536),
+created **11:35:13 China time**, passed all 203 tests, typecheck and the scoped
+guard with zero forbidden privileges. Halifax actually returned 522 on all three
+attempts: retry warnings at `03:35:58.245Z` and `03:36:18.625Z`, then exhaustion
+at `03:36:40.336Z`. The workflow correctly failed; the other 11 sources passed.
+This observes the retry branch live but does not establish upstream recovery.
+
+The user subsequently approved applying the one-hour grace / one-workflow-failure
+per outage policy to **Halifax and Ottawa key-page HTTP 522 only**. A typed error
+is emitted only after confirmed 522 exhaustion and matched to the configured
+city's exact origin. Unknown errors, generic network exceptions, other HTTP
+statuses, missing keys, examination API failures, invalid inventory, and
+notification/database errors remain immediate. Dry runs never suppress failures
+or access health state.
+
+Health records are separate at `(__monitor_health__, halifax/aec-key-page)` and
+`(__monitor_health__, ottawa/aec-key-page)`. They reuse the existing v1 one-hour
+state machine; its legacy `firstChallengeAt` field means first confirmed 522 in
+these rows. The baseline is the last complete persisted source snapshot; Ottawa
+uses the older of both format timestamps, so a partial write cannot rearm an
+incident. Missing baselines start an hour at the first observed 522. Malformed
+or unreadable/unwritable health state fails immediately. The incident is persisted
+before issuing or suppressing its failure. This records a workflow failure, not
+proof GitHub delivered an email.
+
+Actual complete scraping and successful notification/persistence reset the
+incident; a Discord or availability-write failure cannot reset it. Source summaries
+continue to display **DEGRADED** while stale state is preserved. A green job in
+that state does not establish availability freshness. Explicit format scopes also
+ensure successful empty AEC snapshots have freshness rows on a new installation.
+No database grants, schema, credentials, or other-centre alert policies change.
+
+All **212 tests**, typecheck and whitespace checks pass. The new policy tests
+cover exact-hour boundaries, one failure until recovery, both centres, partial
+Ottawa persistence, complete baseline recovery after a failed health write,
+missing baselines, malformed/future timestamps, wrong error/origin/source,
+dry-run isolation, other-centre failures, DB/Discord failures, and visible
+source-summary degradation.
+
+Policy shipment and scheduled verification remain pending.

@@ -53,3 +53,10 @@ its single API request remain unchanged. Exhaustion, transport errors, other
 statuses and unknown data still fail and preserve state. This is bounded
 resilience, not a repair of the upstream server. See the
 [October 22 incident record](../health-assessment-2026-10-22.md).
+
+The user then approved one-hour grace and one workflow failure per continuous
+**key-page HTTP 522** outage, using separate `halifax/aec-key-page` health
+metadata. The source stays visibly DEGRADED and preserves its snapshot. Successful
+scraping plus delivery/persistence rearms the incident; all other errors and
+health-storage failures remain immediate. This controls repeated emails during
+the observed origin outage and does not restore access to the failed server.

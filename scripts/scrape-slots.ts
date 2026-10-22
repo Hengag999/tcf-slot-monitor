@@ -13,6 +13,8 @@ import { getPrevState, upsertState } from "../src/lib/db";
 import { notifyDiscord, type PublishedAvailabilityStyle } from "../src/lib/discord";
 import { runRegistrationReminders, type RegistrationExam, type ReminderOptions } from "../src/lib/registrationReminders";
 import { recordPaperChallenge, recordPaperSuccess } from "../src/lib/torontoPaperHealth";
+import { AecKeyPage522Error } from "../src/lib/aecExaminations";
+import { recordAec522, recordAecSuccess } from "../src/lib/aecOriginHealth";
 
 // Common shape that all scrapers satisfy
 export interface MonitorSlot {
@@ -41,6 +43,8 @@ export interface CityConfig {
   reminderMode?: boolean;
   // Chinese city name used in the reminder message header (reminderMode only).
   zhLabel?: string;
+  // Approved only for these configured origins' exhausted key-page HTTP 522.
+  aecKeyPageGrace?: { origin: string };
 }
 
 const DRY_RUN = process.argv.includes("--dry-run");
@@ -56,8 +60,8 @@ export function createSources(): CityConfig[] {
   { key: "toronto", source: "paper", label: "Toronto", scrape: scrapeTorontoPaper, examTypes: ["P-TCF Canada"], webhookEnv: "DISCORD_WEBHOOK_TORONTO" },
   { key: "calgary", label: "Calgary", scrape: scrapeCalgary, webhookEnv: "DISCORD_WEBHOOK_CALGARY" },
   { key: "vancouver", label: "Vancouver", scrape: async () => (await bcRows()).filter((row) => !/victoria/i.test(row.location)), webhookEnv: "DISCORD_WEBHOOK_VANCOUVER", reminderMode: true, zhLabel: "温哥华" },
-  { key: "halifax", label: "Halifax", scrape: scrapeHalifax, webhookEnv: "DISCORD_WEBHOOK_HALIFAX" },
-  { key: "ottawa", label: "Ottawa", scrape: scrapeOttawa, webhookEnv: "DISCORD_WEBHOOK_OTTAWA" },
+  { key: "halifax", label: "Halifax", scrape: scrapeHalifax, examTypes: ["TCF Canada"], webhookEnv: "DISCORD_WEBHOOK_HALIFAX", aecKeyPageGrace: { origin: "https://afhalifax.aec.app" } },
+  { key: "ottawa", label: "Ottawa", scrape: scrapeOttawa, examTypes: ["TCF Canada sur ordinateur", "TCF Canada (papier)"], webhookEnv: "DISCORD_WEBHOOK_OTTAWA", aecKeyPageGrace: { origin: "https://afottawa.aec.app" } },
   { key: "ashton", label: "Ashton", scrape: scrapeAshton, webhookEnv: "DISCORD_WEBHOOK_ASHTON", diffByDate: true },
   { key: "northyork", label: "North York", scrape: scrapeNorthYork, webhookEnv: "DISCORD_WEBHOOK_NORTHYORK", diffByDate: true },
   { key: "victoria", label: "Victoria", scrape: scrapeVictoria, webhookEnv: "DISCORD_WEBHOOK_VICTORIA", reminderMode: true, zhLabel: "维多利亚", reminderOptions: { timeZone: "America/Vancouver", timeZoneLabel: "维多利亚时间" } },
@@ -199,6 +203,23 @@ export async function runMonitor(
     try {
       allSlots = await city.scrape();
     } catch (err) {
+      if (!dryRun && city.aecKeyPageGrace && city.examTypes
+        && err instanceof AecKeyPage522Error && err.origin === city.aecKeyPageGrace.origin) {
+        try {
+          const decision = await recordAec522(io, city.key, city.examTypes, now());
+          const detail = decision.action === "alert" ? "one-hour outage — alert issued"
+            : decision.action === "already-reported" ? "outage already reported — repeats suppressed"
+            : "within one-hour grace period";
+          console.warn(`[${source}] AEC key-page HTTP 522: ${detail}; ${decision.minutesWithoutSuccess} min without success; availability state preserved`);
+          results.push({source, status: `DEGRADED — ${detail}; state preserved; AEC key-page HTTP 522`});
+          if (decision.action === "alert") failures.push(`${source} (one-hour AEC key-page HTTP 522 outage)`);
+        } catch {
+          console.error(`[${source}] AEC health-state check/persistence failed; cannot safely suppress outage`);
+          failures.push(`${source} (health state)`);
+          results.push({source, status: "HEALTH STATE FAILED — availability state preserved"});
+        }
+        continue;
+      }
       if (!dryRun && source === "toronto/paper"
         && (err instanceof TorontoPaperChallengeError || err instanceof TorontoPaperTransportError)) {
         const cause = err instanceof TorontoPaperChallengeError ? "challenge" : "temporary connection failure";
@@ -225,6 +246,7 @@ export async function runMonitor(
     try {
       await processCity(city, allSlots, dryRun, io);
       if (!dryRun && source === "toronto/paper") await recordPaperSuccess(io, now());
+      if (!dryRun && city.aecKeyPageGrace) await recordAecSuccess(io, city.key, now());
       results.push({ source, status: "OK" });
     } catch (err) {
       console.error(`[${source}] Notify/persist error, skipping:`, err);

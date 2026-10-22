@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { scrapeHalifax } from "../scripts/scrapers/halifax";
 import { scrapeOttawa } from "../scripts/scrapers/ottawa";
+import { AecKeyPage522Error } from "../src/lib/aecExaminations";
 
 // Minimal public API fields captured 2026-10-09. No API key, customer data,
 // descriptions, media metadata or account-specific URLs are stored here.
@@ -197,7 +198,11 @@ test("both AEC centres recover key-page 522 responses before validating complete
 test("persistent AEC key-page 522 stops after three attempts without fetching or returning inventory", async () => {
   for (const scrape of [scrapeHalifax, scrapeOttawa]) {
     const io = keyPageSequence([522, 522, 522]);
-    await assert.rejects(scrape(io), /failed to fetch page for API key \(522\)/);
+    await assert.rejects(scrape(io), error => {
+      assert.ok(error instanceof AecKeyPage522Error);
+      assert.equal(error.origin, scrape === scrapeHalifax ? "https://afhalifax.aec.app" : "https://afottawa.aec.app");
+      return true;
+    });
     assert.equal(io.attempts(), 3);
     assert.deepEqual(io.sleeps, [1000, 2000]);
     assert.deepEqual(io.requests, ["/", "/", "/"]);

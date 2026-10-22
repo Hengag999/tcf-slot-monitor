@@ -38,3 +38,11 @@ The examinations API retry policy above is unchanged. Exhaustion still fails the
 complete source and preserves both formats. See the
 [October 22 incident record](../health-assessment-2026-10-22.md) for production
 verification and the distinct Halifax/Ashton observations.
+
+The user additionally approved one-hour grace and one workflow failure per
+continuous **key-page HTTP 522** outage. Separate `ottawa/aec-key-page` health
+metadata uses the older timestamp of both persisted formats as its baseline;
+partial persistence cannot rearm the alert. Actual complete scraping and
+successful notification/persistence reset the incident. The source remains
+visibly DEGRADED on 522; every other error and health-storage failure remains
+immediate. No availability snapshot is cleared by an outage.
