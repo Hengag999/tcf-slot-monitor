@@ -28,3 +28,13 @@ The three follow-up runs passed 191 tests and the scoped database guard. Ottawa
 returned the same six computer dates and one paper date without retries or
 duplicate notifications; a read-only check confirmed fresh state. The retry
 branch itself is regression-tested, not yet observed handling another live 500.
+
+## October 22 API-key-page 522
+
+An observed HTTP 522 occurred before examinations requests. Ottawa now separately
+opts into at most three key-page GET attempts for **522 only**, with one-/two-second
+delays and fresh 20-second deadlines; non-522 key-page failures are still immediate.
+The examinations API retry policy above is unchanged. Exhaustion still fails the
+complete source and preserves both formats. See the
+[October 22 incident record](../health-assessment-2026-10-22.md) for production
+verification and the distinct Halifax/Ashton observations.

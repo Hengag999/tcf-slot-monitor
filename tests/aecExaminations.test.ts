@@ -128,7 +128,7 @@ test("Ottawa exhausts at three server errors and never returns the other format 
 });
 
 test("Ottawa does not retry auth, rate limits, unknown server statuses, malformed data or transport failures", async () => {
-  for (const outcome of [401, 403, 404, 429, 501, 505, "{}", "not-json", new TypeError("fetch failed")]) {
+  for (const outcome of [401, 403, 404, 429, 501, 505, 522, "{}", "not-json", new TypeError("fetch failed")]) {
     const io = ottawaSequence([outcome]);
     await assert.rejects(scrapeOttawa(io));
     assert.equal(io.attempts(), 1);
@@ -140,7 +140,7 @@ test("Ottawa does not retry auth, rate limits, unknown server statuses, malforme
   assert.deepEqual(mixed.sleeps, [1000]);
 });
 
-test("Ottawa key discovery and Halifax retain single-request failure behavior", async () => {
+test("non-522 key discovery errors and Halifax examination errors retain single-request failure behavior", async () => {
   for (const outcome of [500, "missing key"]) {
     let calls = 0;
     await assert.rejects(scrapeOttawa({
@@ -152,6 +152,70 @@ test("Ottawa key discovery and Halifax retain single-request failure behavior", 
   const requests: string[] = [];
   await assert.rejects(scrapeHalifax({ fetchImpl: fakeFetch({ "16": 503 }, requests) }), /examinations API returned 503/);
   assert.deepEqual(requests, ["/", "/api/v1/public/examinations/list/1/16"]);
+});
+
+function keyPageSequence(sequence: Array<string | number | Error>) {
+  const requests: string[] = [];
+  const sleeps: number[] = [];
+  const signals: AbortSignal[] = [];
+  const discarded: Response[] = [];
+  const valid = fakeFetch({"16": halifax, "5": computer, "79": paper}, requests);
+  let attempts = 0;
+  const fetchImpl = (async (input, options) => {
+    if (new URL(String(input)).pathname !== "/") return valid(input, options);
+    requests.push("/");
+    assert.equal(options?.redirect, "error");
+    assert.ok(options?.signal);
+    assert.ok(discarded.every(response => response.bodyUsed), "release 522 bodies before retrying");
+    signals.push(options.signal);
+    const outcome = sequence[attempts++];
+    assert.notEqual(outcome, undefined, "key-page retry budget exceeded");
+    if (outcome instanceof Error) throw outcome;
+    const response = new Response(typeof outcome === "number" ? "upstream timeout" : outcome,
+      {status: typeof outcome === "number" ? outcome : 200});
+    if (outcome === 522) discarded.push(response);
+    return response;
+  }) as typeof fetch;
+  return {fetchImpl, requests, signals, sleeps, attempts: () => attempts,
+    sleep: async (ms: number) => { sleeps.push(ms); }};
+}
+
+test("both AEC centres recover key-page 522 responses before validating complete inventory", async () => {
+  for (const scrape of [scrapeHalifax, scrapeOttawa]) {
+    for (const errors of [1, 2]) {
+      const io = keyPageSequence([...Array(errors).fill(522), '{"APIKEY":"public-test-fixture"}']);
+      const slots = await scrape(io);
+      assert.equal(slots.length, scrape === scrapeHalifax ? 17 : 4);
+      assert.equal(io.attempts(), errors + 1);
+      assert.equal(new Set(io.signals).size, errors + 1, "fresh deadline for each GET");
+      assert.deepEqual(io.sleeps, errors === 1 ? [1000] : [1000, 2000]);
+      assert.equal(io.requests.filter(path => path !== "/").length, scrape === scrapeHalifax ? 1 : 2);
+    }
+  }
+});
+
+test("persistent AEC key-page 522 stops after three attempts without fetching or returning inventory", async () => {
+  for (const scrape of [scrapeHalifax, scrapeOttawa]) {
+    const io = keyPageSequence([522, 522, 522]);
+    await assert.rejects(scrape(io), /failed to fetch page for API key \(522\)/);
+    assert.equal(io.attempts(), 3);
+    assert.deepEqual(io.sleeps, [1000, 2000]);
+    assert.deepEqual(io.requests, ["/", "/", "/"]);
+  }
+});
+
+test("AEC key-page retries remain exclusive to HTTP 522, including after an earlier timeout", async () => {
+  for (const scrape of [scrapeHalifax, scrapeOttawa]) {
+    for (const outcome of [401, 403, 404, 429, 500, 503, "missing key", new TypeError("fetch failed")]) {
+      for (const prefix of [[], [522]]) {
+        const io = keyPageSequence([...prefix, outcome]);
+        await assert.rejects(scrape(io));
+        assert.equal(io.attempts(), prefix.length + 1);
+        assert.deepEqual(io.sleeps, prefix.length ? [1000] : []);
+        assert.ok(io.requests.every(path => path === "/"), "never call inventory with unknown key");
+      }
+    }
+  }
 });
 
 test("all validated matching groups are read instead of silently using only the first group", async () => {

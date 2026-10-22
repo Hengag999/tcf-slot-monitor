@@ -43,3 +43,13 @@ wrong groups, unknown states, malformed data, and genuine empty responses.
 
 See [the October 9 audit](../health-assessment-2026-10-09.md) for the release,
 scheduled-run, and database verification record.
+
+## October 22 origin timeout hardening
+
+The public API-key page repeatedly returned HTTP 522, also observed in the actual
+browser. Halifax now retries only that page's HTTP 522 at most three times, with
+one-/two-second delays and fresh 20-second deadlines. Inventory validation and
+its single API request remain unchanged. Exhaustion, transport errors, other
+statuses and unknown data still fail and preserve state. This is bounded
+resilience, not a repair of the upstream server. See the
+[October 22 incident record](../health-assessment-2026-10-22.md).

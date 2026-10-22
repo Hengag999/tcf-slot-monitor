@@ -24,6 +24,8 @@ export interface AecSource {
   bookingOrigins: string[];
   // Opt in only where observed server failures justify bounded GET retries.
   retryServerErrors?: boolean;
+  // Halifax and Ottawa have returned HTTP 522 while discovering the public key.
+  retryKeyPage522?: boolean;
 }
 
 function object(value: unknown): value is Record<string, unknown> {
@@ -98,10 +100,18 @@ export async function scrapeAecExaminations(
   fetchImpl: typeof fetch = fetch,
   sleep: (ms: number) => Promise<void> = ms => new Promise(resolve => setTimeout(resolve, ms)),
 ): Promise<AecSlot[]> {
-  const page = await fetchImpl(`${source.baseUrl}/`, {
-    headers: { "User-Agent": "Mozilla/5.0 (compatible; tcf-slot-monitor/1.0)" },
-    signal: AbortSignal.timeout(20_000), redirect: "error",
-  });
+  const pageAttempts = source.retryKeyPage522 ? 3 : 1;
+  let page!: Response;
+  for (let attempt = 1; attempt <= pageAttempts; attempt++) {
+    page = await fetchImpl(`${source.baseUrl}/`, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; tcf-slot-monitor/1.0)" },
+      signal: AbortSignal.timeout(20_000), redirect: "error",
+    });
+    if (page.status !== 522 || attempt === pageAttempts) break;
+    await page.body?.cancel().catch(() => {});
+    console.warn(`[${source.label}] API-key page: HTTP 522; retry ${attempt}/${pageAttempts - 1}`);
+    await sleep(attempt * 1000);
+  }
   if (!page.ok) throw new Error(`${source.label}: failed to fetch page for API key (${page.status})`);
   const match = (await page.text()).match(/"APIKEY":"([^"]+)"/);
   if (!match) throw new Error(`${source.label}: APIKEY not found in page source`);
