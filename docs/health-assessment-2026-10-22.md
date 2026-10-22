@@ -174,3 +174,24 @@ healthy automatic cycles with fresh state. If the continuous outage reaches
 24 hours since last actual success, it will notify once that the upstream
 operator must act and pause the local follow-up, leaving production monitoring
 and snapshots intact. Actual upstream recovery is still pending.
+
+### Quiet follow-up — 12:02 China time
+
+The previously unavailable full text logs were retrieved for automatic runs
+`39719473973` (11:55:11) and
+[39719927040](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/39719927040)
+(12:00:17), both on `a569c75`. Both passed **213 tests**, typecheck and the
+`tcf_slot_monitor` credential guard with **zero forbidden privileges**, inspecting
+84 other relations and 43 sequences. Eleven source checks were OK in both;
+Halifax was explicitly **DEGRADED, HTTP 521, within one-hour grace** at 49 and
+54 minutes without success. This confirms the actual CI/test and source-table
+behavior, superseding the earlier log-download limitation. Creation interval
+was 5 minutes 6 seconds.
+
+A read-only check at `2026-10-22T04:02:31.340Z` confirmed the other 13
+availability/reminder rows refreshed in the 12:00 cycle. Halifax's prior snapshot,
+last-success baseline, first-failure marker and notification timestamp were
+unchanged, with no failure issued yet. Ottawa and Toronto paper health recorded
+actual success with null incident markers. The hour threshold and following
+suppression are still pending; this unchanged, non-actionable state did not
+trigger a user notification. The temporary follow-up remains active.
