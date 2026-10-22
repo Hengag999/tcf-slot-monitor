@@ -48,7 +48,7 @@ in the 11:25 cycle. Health metadata was excluded. No production data was written
 for diagnosis, no extra workflow was dispatched, and no credentials or grants
 were changed.
 
-Shipment and normal scheduled verification remain pending. This hardening cannot
+Initial retry shipment and production evidence are recorded below. This hardening cannot
 repair the centre's origin server; successful retries/recovery must be observed
 rather than inferred from tests.
 
@@ -94,7 +94,8 @@ missing baselines, malformed/future timestamps, wrong error/origin/source,
 dry-run isolation, other-centre failures, DB/Discord failures, and visible
 source-summary degradation.
 
-Policy shipment and scheduled verification remain pending.
+The initial 522-only policy was deployed as `e434b92`; its later 521 result and
+user-approved extension are recorded below.
 
 ## Confirmed HTTP 521 and approved shared origin-outage policy
 
@@ -119,3 +120,57 @@ file passed, and reducing expected synthetic console output resolved the full
 suite. CI's actual Node 20 result still needs production verification.
 
 Reference: [Cloudflare HTTP 521](https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-5xx-errors/error-521/).
+
+
+## Final-policy production observation and continuing follow-up
+
+Commit `a569c75` shipped the combined 521/522 policy. Automatic run
+[39719473973](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/39719473973),
+created **11:55:11 China time**, selected that revision. The completed job and
+all execution steps succeeded, including offline tests, typecheck, the scoped
+credential guard and scraping. The full text log was unavailable at this check
+because repeated GitHub log downloads returned EOF; the successful job/step
+metadata and read-only production state were inspected independently. This is
+not being counted as all 12 sources actually healthy.
+
+At **11:57:38.259 China time**, a read-only transaction as `tcf_slot_monitor`
+confirmed Halifax still held its last successful empty snapshot at
+`2026-10-22T03:05:50.641Z`, with unchanged
+`notified_at=2026-09-28T15:04:14.680Z`. The separate `halifax/aec-key-page`
+health row held the same last success, first observed approved outage at
+`2026-10-22T03:55:39.004Z`, and `failureReportedAt=null` — inside the approved
+hour. It did not reset the baseline to deployment time. Ottawa health showed
+actual complete success at `03:55:39.574Z`, with incident markers null. All
+other 13 availability/reminder rows refreshed during the 11:55 cycle.
+
+| Centre | Current evidence at the read-only check |
+| --- | --- |
+| Toronto | Both format snapshots fresh; paper health records success |
+| Calgary | Fresh successful empty snapshot |
+| Vancouver | Fresh 97-row reminder state |
+| Halifax | **DEGRADED upstream origin outage**; snapshot preserved, grace active |
+| Ottawa | Fresh four computer and two paper slots; successful health reset |
+| Ashton | Fresh empty state after earlier isolated transport recovery |
+| North York | Fresh 138 computer and two paper schedules |
+| Victoria | Fresh 21-row reminder state |
+| Edmonton | Fresh empty availability and 30-row reminder state |
+| Winnipeg | Fresh empty published-availability state |
+
+These are processing/freshness observations, not a new independent completeness
+audit of every booking platform.
+
+The one-hour threshold remains **12:05:50.641 China time** unless an actual
+successful Halifax check occurs first. The first qualifying automatic cycle may
+be 12:05 or 12:10 depending on when its source check finishes. The exact live
+threshold failure and following repeat suppression are **not yet verified**;
+regression tests cover those transitions. A green grace run is alert control,
+not a repair to Halifax's origin.
+
+The previous temporary automation no longer existed. A new **15-minute**
+`tcf-aec-outage-recovery` thread follow-up is active. It checks the threshold,
+subsequent suppression, scoped guard and all source outcomes using read-only
+state. It stays quiet for unchanged outages and will pause after three truly
+healthy automatic cycles with fresh state. If the continuous outage reaches
+24 hours since last actual success, it will notify once that the upstream
+operator must act and pause the local follow-up, leaving production monitoring
+and snapshots intact. Actual upstream recovery is still pending.

@@ -65,3 +65,10 @@ A subsequent production run observed HTTP **521** instead of 522. The user
 explicitly extended the policy to **both 521 and 522**. They now share retries,
 the same health record, one hour baseline and one failure per continuous outage;
 changing statuses does not rearm it. All other errors remain immediate.
+
+The final policy shipped as `a569c75`. Its first automatic run at 11:55:11
+China time completed successfully; read-only state confirmed Halifax's grace
+metadata and preserved stale snapshot, while Ottawa recorded actual success.
+The hour-threshold transition, repeat suppression and eventual upstream recovery
+remain under the temporary 15-minute follow-up. A green grace run is not source
+recovery. See the incident record for exact evidence and limits.

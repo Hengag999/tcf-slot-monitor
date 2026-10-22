@@ -52,3 +52,10 @@ both centres' policy to **521 and 522**. Both key-page statuses share retries an
 one continuous outage record. Changing statuses cannot reset the grace clock or
 issue a second alert. Every other error and the examinations API policy are
 unchanged.
+
+The final policy shipped as `a569c75`. Its first automatic run at 11:55:11
+China time completed successfully; read-only state confirmed Halifax's grace
+metadata and preserved stale snapshot, while Ottawa recorded actual success.
+The hour-threshold transition, repeat suppression and eventual upstream recovery
+remain under the temporary 15-minute follow-up. A green grace run is not source
+recovery. See the incident record for exact evidence and limits.
