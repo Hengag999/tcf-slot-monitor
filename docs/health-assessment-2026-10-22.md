@@ -95,3 +95,27 @@ dry-run isolation, other-centre failures, DB/Discord failures, and visible
 source-summary degradation.
 
 Policy shipment and scheduled verification remain pending.
+
+## Confirmed HTTP 521 and approved shared origin-outage policy
+
+The first 522-policy run on `e434b92`,
+[39718571709](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/39718571709),
+created **11:45:13 China time**, passed 212 tests and the scoped guard but failed
+Halifax on a newly observed **HTTP 521**. The 522-only policy correctly did not
+suppress it. Cloudflare documents 521 as an origin refusing its connections;
+this does not establish whether this origin's cause is an offline process or a
+firewall. The user explicitly approved extending the same grace/one-alert policy
+to **521 and 522 together**, with one continuous incident across status changes.
+
+The final typed origin error admits only exhausted key-page 521/522 from the
+configured centre origin. Both statuses receive the same bounded retries and
+share the existing health key and hour baseline; alternating them never resets
+the clock or creates another alert. Every other failure remains immediate.
+The current policy is this approved 521/522 scope, superseding the initial
+522-only scope described above. All **213 tests**, typecheck and whitespace checks
+pass, including mixed-status retries and one incident across alternating errors.
+A local Node 22 test-worker IPC deserialization error occurred once; the focused
+file passed, and reducing expected synthetic console output resolved the full
+suite. CI's actual Node 20 result still needs production verification.
+
+Reference: [Cloudflare HTTP 521](https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-5xx-errors/error-521/).

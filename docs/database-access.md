@@ -122,13 +122,13 @@ and timestamps. The production timer and restricted database role remain active.
 References: [Neon roles](https://neon.com/docs/manage/roles),
 [PostgreSQL privileges](https://www.postgresql.org/docs/current/ddl-priv.html).
 
-## AEC key-page HTTP 522 health — October 22, 2026
+## AEC key-page HTTP 521/522 health — October 22, 2026
 
 The user-approved outage policy additionally stores independent health rows at
 `(__monitor_health__, halifax/aec-key-page)` and
 `(__monitor_health__, ottawa/aec-key-page)` in the same monitor table. They use
 the existing one-hour state machine and v1 JSON fields; `firstChallengeAt` means
-first confirmed exhausted key-page HTTP 522 here. Availability and notification
+first confirmed exhausted key-page HTTP 521/522 here. Availability and notification
 state stay in their original city/format rows. Exclude **all** `__monitor_health__`
 rows from availability freshness checks. No grants or migrations are needed.
 See the [October 22 incident](health-assessment-2026-10-22.md) for the narrow

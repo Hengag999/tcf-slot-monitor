@@ -2,7 +2,7 @@ import type { getPrevState, upsertState } from "./db";
 import { HEALTH_CITY, challengeDecision, readPaperHealth, type PaperHealth } from "./torontoPaperHealth";
 
 // Reuse the proven one-hour state machine, retaining its v1 JSON field names.
-// In these separate AEC rows, firstChallengeAt means first confirmed key-page 522.
+// In these separate AEC rows, firstChallengeAt means first confirmed key-page 521/522.
 export const aecHealthKey = (city: string) => `${city}/aec-key-page`;
 type HealthIO = { getPrevState: typeof getPrevState; upsertState: typeof upsertState };
 
@@ -13,7 +13,7 @@ async function previousHealth(io: HealthIO, city: string, now: number): Promise<
   return matches.length ? readPaperHealth(matches[0].slots, now) : undefined;
 }
 
-export async function recordAec522(io: HealthIO, city: string, examTypes: string[], now: number) {
+export async function recordAecOriginOutage(io: HealthIO, city: string, examTypes: string[], now: number) {
   if (!examTypes.length || new Set(examTypes).size !== examTypes.length) throw new Error("Invalid AEC health exam scope");
   const [previous, rows] = await Promise.all([previousHealth(io, city, now), io.getPrevState(city)]);
   const checked = examTypes.map(type => {

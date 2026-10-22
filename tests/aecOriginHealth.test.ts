@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, {beforeEach} from "node:test";
 import {mkdtemp, readFile, rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {createSources, runMonitor, type CityConfig, type MonitorDependencies} from "../scripts/scrape-slots";
-import {AecKeyPage522Error} from "../src/lib/aecExaminations";
-import {aecHealthKey, recordAec522} from "../src/lib/aecOriginHealth";
+import {AecKeyPageOriginError} from "../src/lib/aecExaminations";
+import {aecHealthKey, recordAecOriginOutage} from "../src/lib/aecOriginHealth";
 import {HEALTH_CITY} from "../src/lib/torontoPaperHealth";
 import type {StateRow} from "../src/lib/db";
 
@@ -14,10 +14,16 @@ const minute = 60_000;
 const iso = (ms: number) => new Date(ms).toISOString();
 const inheritedSummary = process.env.GITHUB_STEP_SUMMARY;
 delete process.env.GITHUB_STEP_SUMMARY;
+// Expected synthetic outages are asserted via state/errors and the summary.
+// Avoid flooding Node's test-worker IPC with their console tables and stacks.
+beforeEach(context => {
+  assert.ok("mock" in context, "expected a test context");
+  for (const method of ["log", "warn", "error", "table"] as const) context.mock.method(console, method, () => {});
+});
 
 function harness(city = "halifax") {
   const source = {...createSources().find(source => source.key === city)!, scrape: async () => []};
-  const blocked = {...source, scrape: async () => { throw new AecKeyPage522Error(source.aecKeyPageGrace!.origin, source.label); }};
+  const blocked = {...source, scrape: async () => { throw new AecKeyPageOriginError(source.aecKeyPageGrace!.origin, source.label, 522); }};
   const rows: StateRow[] = source.examTypes!.map(exam_type => ({city, exam_type, slots: [{id: "keep", date: "2026-12-01"}], checked_at: iso(start)}));
   let clock = start;
   const io: MonitorDependencies = {
@@ -68,18 +74,29 @@ test("partial Ottawa persistence cannot rearm an incident; both newer formats ca
   const h = harness("ottawa");
   await assert.rejects(h.run([h.blocked], 60));
   h.rows[0].checked_at = iso(start + 65 * minute);
-  const partial = await recordAec522(h.io, "ottawa", h.source.examTypes!, start + 70 * minute);
+  const partial = await recordAecOriginOutage(h.io, "ottawa", h.source.examTypes!, start + 70 * minute);
   assert.equal(partial.action, "already-reported");
   h.rows[1].checked_at = iso(start + 66 * minute);
-  const complete = await recordAec522(h.io, "ottawa", h.source.examTypes!, start + 75 * minute);
+  const complete = await recordAecOriginOutage(h.io, "ottawa", h.source.examTypes!, start + 75 * minute);
   assert.equal(complete.action, "grace");
   assert.equal(complete.minutesWithoutSuccess, 10);
   assert.equal(complete.state.failureReportedAt, null);
 });
 
+test("alternating approved AEC 521 and 522 statuses share one continuous outage and one failure", async () => {
+  const h = harness();
+  const refused = {...h.source, scrape: async () => { throw new AecKeyPageOriginError(h.source.aecKeyPageGrace!.origin, "Halifax", 521); }};
+  await h.run([refused], 5);
+  await assert.rejects(h.run([h.blocked], 60), /one-hour AEC key-page HTTP 522 outage/);
+  const incident = structuredClone(h.health()!.slots);
+  await h.run([refused], 65);
+  await h.run([h.blocked], 70);
+  assert.deepEqual(h.health()!.slots, incident);
+});
+
 test("AEC grace never swallows unknown errors, wrong origins, other sources or dry-run failures", async () => {
   const h = harness();
-  for (const error of [new Error("failed to fetch page (522)"), new TypeError("fetch failed"), new AecKeyPage522Error("https://other.example", "Halifax")]) {
+  for (const error of [new Error("failed to fetch page (522)"), new TypeError("fetch failed"), new AecKeyPageOriginError("https://other.example", "Halifax", 522)]) {
     await assert.rejects(h.run([{...h.source, scrape: async () => { throw error; }}], 5), /halifax \(scrape\)/);
     assert.equal(h.health(), undefined);
   }

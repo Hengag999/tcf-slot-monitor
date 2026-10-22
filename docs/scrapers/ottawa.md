@@ -46,3 +46,9 @@ partial persistence cannot rearm the alert. Actual complete scraping and
 successful notification/persistence reset the incident. The source remains
 visibly DEGRADED on 522; every other error and health-storage failure remains
 immediate. No availability snapshot is cleared by an outage.
+
+After Halifax subsequently returned HTTP **521**, the user explicitly extended
+both centres' policy to **521 and 522**. Both key-page statuses share retries and
+one continuous outage record. Changing statuses cannot reset the grace clock or
+issue a second alert. Every other error and the examinations API policy are
+unchanged.

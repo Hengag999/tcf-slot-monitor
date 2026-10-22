@@ -60,3 +60,8 @@ metadata. The source stays visibly DEGRADED and preserves its snapshot. Successf
 scraping plus delivery/persistence rearms the incident; all other errors and
 health-storage failures remain immediate. This controls repeated emails during
 the observed origin outage and does not restore access to the failed server.
+
+A subsequent production run observed HTTP **521** instead of 522. The user
+explicitly extended the policy to **both 521 and 522**. They now share retries,
+the same health record, one hour baseline and one failure per continuous outage;
+changing statuses does not rearm it. All other errors remain immediate.

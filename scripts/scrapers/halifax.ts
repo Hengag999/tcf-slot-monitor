@@ -11,7 +11,7 @@ const SOURCE: AecSource = {
   label: "Halifax", baseUrl: "https://afhalifax.aec.app", branchId: 1,
   examTypes: [{ id: 16, name: "TCF Canada" }],
   bookingOrigins: ["https://afhalifax.ca"],
-  retryKeyPage522: true,
+  retryKeyPageOriginErrors: true,
 };
 
 export async function scrapeHalifax(options: { fetchImpl?: typeof fetch; sleep?: (ms: number) => Promise<void> } = {}): Promise<Slot[]> {

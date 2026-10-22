@@ -10,7 +10,7 @@ const SOURCE: AecSource = {
   examTypes: [{ id: 5, name: "TCF Canada sur ordinateur" }, { id: 79, name: "TCF Canada (papier)" }],
   bookingOrigins: ["https://www.af.ca", "https://af.ca"],
   retryServerErrors: true,
-  retryKeyPage522: true,
+  retryKeyPageOriginErrors: true,
 };
 
 export async function scrapeOttawa(options: { fetchImpl?: typeof fetch; sleep?: (ms: number) => Promise<void> } = {}): Promise<Slot[]> {

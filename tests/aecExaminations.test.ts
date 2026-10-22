@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { scrapeHalifax } from "../scripts/scrapers/halifax";
 import { scrapeOttawa } from "../scripts/scrapers/ottawa";
-import { AecKeyPage522Error } from "../src/lib/aecExaminations";
+import { AecKeyPageOriginError } from "../src/lib/aecExaminations";
 
 // Minimal public API fields captured 2026-10-09. No API key, customer data,
 // descriptions, media metadata or account-specific URLs are stored here.
@@ -129,7 +129,7 @@ test("Ottawa exhausts at three server errors and never returns the other format 
 });
 
 test("Ottawa does not retry auth, rate limits, unknown server statuses, malformed data or transport failures", async () => {
-  for (const outcome of [401, 403, 404, 429, 501, 505, 522, "{}", "not-json", new TypeError("fetch failed")]) {
+  for (const outcome of [401, 403, 404, 429, 501, 505, 521, 522, "{}", "not-json", new TypeError("fetch failed")]) {
     const io = ottawaSequence([outcome]);
     await assert.rejects(scrapeOttawa(io));
     assert.equal(io.attempts(), 1);
@@ -141,7 +141,7 @@ test("Ottawa does not retry auth, rate limits, unknown server statuses, malforme
   assert.deepEqual(mixed.sleeps, [1000]);
 });
 
-test("non-522 key discovery errors and Halifax examination errors retain single-request failure behavior", async () => {
+test("other key discovery errors and Halifax examination errors retain single-request failure behavior", async () => {
   for (const outcome of [500, "missing key"]) {
     let calls = 0;
     await assert.rejects(scrapeOttawa({
@@ -174,32 +174,33 @@ function keyPageSequence(sequence: Array<string | number | Error>) {
     if (outcome instanceof Error) throw outcome;
     const response = new Response(typeof outcome === "number" ? "upstream timeout" : outcome,
       {status: typeof outcome === "number" ? outcome : 200});
-    if (outcome === 522) discarded.push(response);
+    if (outcome === 521 || outcome === 522) discarded.push(response);
     return response;
   }) as typeof fetch;
   return {fetchImpl, requests, signals, sleeps, attempts: () => attempts,
     sleep: async (ms: number) => { sleeps.push(ms); }};
 }
 
-test("both AEC centres recover key-page 522 responses before validating complete inventory", async () => {
+test("both AEC centres recover approved key-page origin errors before validating complete inventory", async () => {
   for (const scrape of [scrapeHalifax, scrapeOttawa]) {
-    for (const errors of [1, 2]) {
-      const io = keyPageSequence([...Array(errors).fill(522), '{"APIKEY":"public-test-fixture"}']);
+    for (const errors of [[521], [522], [521, 522], [522, 521]]) {
+      const io = keyPageSequence([...errors, '{"APIKEY":"public-test-fixture"}']);
       const slots = await scrape(io);
       assert.equal(slots.length, scrape === scrapeHalifax ? 17 : 4);
-      assert.equal(io.attempts(), errors + 1);
-      assert.equal(new Set(io.signals).size, errors + 1, "fresh deadline for each GET");
-      assert.deepEqual(io.sleeps, errors === 1 ? [1000] : [1000, 2000]);
+      assert.equal(io.attempts(), errors.length + 1);
+      assert.equal(new Set(io.signals).size, errors.length + 1, "fresh deadline for each GET");
+      assert.deepEqual(io.sleeps, errors.length === 1 ? [1000] : [1000, 2000]);
       assert.equal(io.requests.filter(path => path !== "/").length, scrape === scrapeHalifax ? 1 : 2);
     }
   }
 });
 
-test("persistent AEC key-page 522 stops after three attempts without fetching or returning inventory", async () => {
+test("persistent AEC key-page origin errors stop after three attempts without fetching or returning inventory", async () => {
   for (const scrape of [scrapeHalifax, scrapeOttawa]) {
-    const io = keyPageSequence([522, 522, 522]);
+    const io = keyPageSequence([521, 522, 521]);
     await assert.rejects(scrape(io), error => {
-      assert.ok(error instanceof AecKeyPage522Error);
+      assert.ok(error instanceof AecKeyPageOriginError);
+      assert.equal(error.status, 521);
       assert.equal(error.origin, scrape === scrapeHalifax ? "https://afhalifax.aec.app" : "https://afottawa.aec.app");
       return true;
     });
@@ -209,7 +210,7 @@ test("persistent AEC key-page 522 stops after three attempts without fetching or
   }
 });
 
-test("AEC key-page retries remain exclusive to HTTP 522, including after an earlier timeout", async () => {
+test("AEC key-page retries remain exclusive to HTTP 521/522, including after an earlier timeout", async () => {
   for (const scrape of [scrapeHalifax, scrapeOttawa]) {
     for (const outcome of [401, 403, 404, 429, 500, 503, "missing key", new TypeError("fetch failed")]) {
       for (const prefix of [[], [522]]) {

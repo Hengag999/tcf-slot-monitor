@@ -13,8 +13,8 @@ import { getPrevState, upsertState } from "../src/lib/db";
 import { notifyDiscord, type PublishedAvailabilityStyle } from "../src/lib/discord";
 import { runRegistrationReminders, type RegistrationExam, type ReminderOptions } from "../src/lib/registrationReminders";
 import { recordPaperChallenge, recordPaperSuccess } from "../src/lib/torontoPaperHealth";
-import { AecKeyPage522Error } from "../src/lib/aecExaminations";
-import { recordAec522, recordAecSuccess } from "../src/lib/aecOriginHealth";
+import { AecKeyPageOriginError } from "../src/lib/aecExaminations";
+import { recordAecOriginOutage, recordAecSuccess } from "../src/lib/aecOriginHealth";
 
 // Common shape that all scrapers satisfy
 export interface MonitorSlot {
@@ -43,7 +43,7 @@ export interface CityConfig {
   reminderMode?: boolean;
   // Chinese city name used in the reminder message header (reminderMode only).
   zhLabel?: string;
-  // Approved only for these configured origins' exhausted key-page HTTP 522.
+  // Approved only for these configured origins' exhausted key-page HTTP 521/522.
   aecKeyPageGrace?: { origin: string };
 }
 
@@ -204,15 +204,15 @@ export async function runMonitor(
       allSlots = await city.scrape();
     } catch (err) {
       if (!dryRun && city.aecKeyPageGrace && city.examTypes
-        && err instanceof AecKeyPage522Error && err.origin === city.aecKeyPageGrace.origin) {
+        && err instanceof AecKeyPageOriginError && [521, 522].includes(err.status) && err.origin === city.aecKeyPageGrace.origin) {
         try {
-          const decision = await recordAec522(io, city.key, city.examTypes, now());
+          const decision = await recordAecOriginOutage(io, city.key, city.examTypes, now());
           const detail = decision.action === "alert" ? "one-hour outage — alert issued"
             : decision.action === "already-reported" ? "outage already reported — repeats suppressed"
             : "within one-hour grace period";
-          console.warn(`[${source}] AEC key-page HTTP 522: ${detail}; ${decision.minutesWithoutSuccess} min without success; availability state preserved`);
-          results.push({source, status: `DEGRADED — ${detail}; state preserved; AEC key-page HTTP 522`});
-          if (decision.action === "alert") failures.push(`${source} (one-hour AEC key-page HTTP 522 outage)`);
+          console.warn(`[${source}] AEC key-page HTTP ${err.status}: ${detail}; ${decision.minutesWithoutSuccess} min without success; availability state preserved`);
+          results.push({source, status: `DEGRADED — ${detail}; state preserved; AEC key-page HTTP ${err.status}`});
+          if (decision.action === "alert") failures.push(`${source} (one-hour AEC key-page HTTP ${err.status} outage)`);
         } catch {
           console.error(`[${source}] AEC health-state check/persistence failed; cannot safely suppress outage`);
           failures.push(`${source} (health state)`);
