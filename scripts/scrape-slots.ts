@@ -114,7 +114,8 @@ export async function processCity(
     return;
   }
 
-  console.log(`[${city.key}] ${allSlots.length} available slot(s)`);
+  const resultLabel = city.notificationStyle?.kind === "published-availability" ? "published exam date(s)" : "available slot(s)";
+  console.log(`[${city.key}] ${allSlots.length} ${resultLabel}`);
 
   const groups = groupByExamType(allSlots);
   if (city.examTypes && allSlots.some((slot) => !city.examTypes!.includes(slot.examType))) {

@@ -57,3 +57,27 @@ published dates are eligible for one notification after deployment. Production
 shipment, actual delivery and normal scheduled-run verification remain pending.
 No database grants, credentials, error-alert policy or unrelated infrastructure
 were changed.
+
+## First repaired automatic run and actual Discord delivery
+
+Commit `eb97e0d` shipped the parser and wording repair. Automatic run
+[40059243329](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/40059243329),
+created **11:40:12 China time**, passed **216 tests**, typecheck, the scoped
+`tcf_slot_monitor` guard with **zero forbidden privileges** (84 other relations
+and 43 sequences inspected), and **all 12 real source checks**. Winnipeg reported
+0 → 3 and Discord accepted all three dates. No manual dispatch or local live
+pipeline was used.
+
+The actual message was read back through the logged-in browser in the existing
+BonTCF Winnipeg channel:
+[1563396789133123735](https://discord.com/channels/1484038585907810535/1557954285474685010/1563396789133123735),
+at `2026-10-24T03:40:41.037Z`. It contains December 9, 11 and 14 with
+09:50–18:00, the official listing/form links, the missing-year caveat,
+registration/payment/centre-confirmation condition and explicit **余位未披露**
+wording. Exactly one message with one `@everyone` was observed. The old generic
+console counter called these slots; the shared console label is now also
+`published exam date(s)` for this published-data style, avoiding an inventory
+claim there. Other source labels are unchanged.
+
+Two subsequent timer cycles, final read-only state and duplicate-delivery checks
+remain pending.
