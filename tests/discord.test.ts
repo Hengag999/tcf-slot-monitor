@@ -41,6 +41,17 @@ test("published availability notifications identify the source and limits throug
   assert.doesNotMatch(sent[0], /新开放|手慢无|立即报名/);
 });
 
+test("published dates without seat counts never claim confirmed availability", () => {
+  const style: PublishedAvailabilityStyle = {kind: "published-availability", sourceUrl: "https://example.com/source", caveat: "需向考点确认，非即时锁位。"};
+  const message = formatSlotNotification("Winnipeg", "TCF Canada", [
+    {date: "December 9", startTime: "09:50", endTime: "18:00", bookingUrl: "https://example.com/form"},
+  ], style);
+  assert.match(message, /官网公布场次（余位未披露，请向考点确认）/);
+  assert.match(message, /December 9 09:50–18:00/);
+  assert.doesNotMatch(message, /官网公布余位|新开放|剩 \d|手慢无|立即报名|undefined/);
+  assert.equal(message.split("@everyone").length - 1, 1);
+});
+
 test("mid-batch 429 retries only the rejected chunk and keeps one accepted mention", async () => {
   const sent: string[] = [];
   const delivered: string[] = [];

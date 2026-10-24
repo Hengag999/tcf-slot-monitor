@@ -19,6 +19,8 @@ export function formatSlotNotification(
   style?: PublishedAvailabilityStyle,
 ): string {
   const published = style?.kind === "published-availability";
+  const publishedLabel = slots.some(slot => slot.availableSeats == null)
+    ? "官网公布场次（余位未披露，请向考点确认）" : "官网公布余位";
   const slotLines = slots.map((s) => {
     const time = s.startTime && s.endTime ? ` ${s.startTime}–${s.endTime}` : "";
     const seats = s.availableSeats != null
@@ -32,7 +34,7 @@ export function formatSlotNotification(
 
   return [
     published
-      ? `@everyone 🗓️ **${cityLabel}** **${examType}** 官网公布余位`
+      ? `@everyone 🗓️ **${cityLabel}** **${examType}** ${publishedLabel}`
       : `@everyone 🗓️ **${cityLabel}** 新开放 **${examType}** 考位，手慢无！`,
     "",
     ...slotLines,

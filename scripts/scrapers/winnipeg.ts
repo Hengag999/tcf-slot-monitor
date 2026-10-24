@@ -1,12 +1,14 @@
-// Alliance Française du Manitoba publishes seats under "Next sessions" and
-// links a registration form. These are published availability counts, not a
-// live checkout inventory. Never submit that form from this monitor.
+// Alliance Française du Manitoba publishes dates and sometimes seats under
+// "Next sessions". Missing counts are not proof of remaining inventory.
+// Never submit the linked registration form from this monitor.
 export interface Slot {
   id: string;
   examType: "TCF Canada";
   date: string;
   bookingUrl: string;
   availableSeats?: number;
+  startTime?: string;
+  endTime?: string;
 }
 
 export const WINNIPEG_PAGE = "https://www.afmanitoba.ca/en/exams/tcf/";
@@ -82,6 +84,13 @@ function isAnnouncementOnly(rest: string): boolean {
   return true;
 }
 
+function publishedClock(value: string): string {
+  const match = value.match(/^(0?[1-9]|1[0-2]):([0-5]\d)\s*(am|pm)$/i);
+  if (!match) throw new Error("Winnipeg: invalid published exam time; state must be preserved");
+  const hour = Number(match[1]) % 12 + (match[3].toLowerCase() === "pm" ? 12 : 0);
+  return `${String(hour).padStart(2, "0")}:${match[2]}`;
+}
+
 function publishedDateList(rest: string): Slot[] {
   // The centre formats the same positive announcement as headings with <br>
   // or individual paragraphs. Source-code whitespace is not a date boundary;
@@ -90,7 +99,19 @@ function publishedDateList(rest: string): Slot[] {
     .replace(/<\/?(?:h[1-6]|p|div|li|ol|ul)\b[^>]*>|<br\b[^>]*>/gi, "\n")
     .split("\n").map(text).filter(Boolean);
   const prefix = /^NO MU(?:L)?TIPLE REGISTRATIONS FOR THE SAME CANDIDATE!\s+New dates:\s*spots available!$/i;
-  const bannerEnd = lines.findIndex((_line, index) => prefix.test(lines.slice(0, index + 1).join(" ")));
+  let bannerEnd = lines.findIndex((_line, index) => prefix.test(lines.slice(0, index + 1).join(" ")));
+  let window: {startTime: string; endTime: string} | undefined;
+  if (bannerEnd < 0) {
+    // A complete published schedule is distinct from the positive seat banner.
+    // Dates remain uncounted; the notifier must not claim confirmed availability.
+    const scheduled = /^NO MU(?:L)?TIPLE REGISTRATIONS FOR THE SAME CANDIDATE!\s+New dates\s*:\s+The EXAM is scheduled from\s+(\d{1,2}:\d{2}\s*(?:am|pm))\s+to\s+(\d{1,2}:\d{2}\s*(?:am|pm))\s+New dates\s*:$/i;
+    bannerEnd = lines.findIndex((_line, index) => scheduled.test(lines.slice(0, index + 1).join(" ")));
+    if (bannerEnd >= 0) {
+      const match = lines.slice(0, bannerEnd + 1).join(" ").match(scheduled)!;
+      window = {startTime: publishedClock(match[1]), endTime: publishedClock(match[2])};
+      if (window.endTime <= window.startTime) throw new Error("Winnipeg: invalid published exam window; state must be preserved");
+    }
+  }
   if (bannerEnd < 0) {
     throw new Error("Winnipeg: Next sessions boundary missing or unrecognized availability list; state must be preserved");
   }
@@ -108,6 +129,7 @@ function publishedDateList(rest: string): Slot[] {
   return sessions.filter(session => session.seats === undefined || session.seats > 0).map(({date, seats}) => ({
     id: `winnipeg-${date.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
     examType: "TCF Canada", date, bookingUrl: WINNIPEG_REGISTRATION,
+    ...window,
     ...(seats === undefined ? {} : { availableSeats: seats }),
   }));
 }

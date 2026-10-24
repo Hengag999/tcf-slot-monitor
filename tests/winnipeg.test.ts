@@ -9,6 +9,7 @@ const publishedDates = readFileSync(new URL("./fixtures/winnipeg-published-dates
 const paragraphDates = readFileSync(new URL("./fixtures/winnipeg-paragraph-dates-2026-10-11.html", import.meta.url), "utf8");
 const countedParagraphs = readFileSync(new URL("./fixtures/winnipeg-counted-paragraphs-2026-10-17.html", import.meta.url), "utf8");
 const announcementOnly = readFileSync(new URL("./fixtures/winnipeg-announcement-only-2026-10-20.html", import.meta.url), "utf8");
+const publishedSchedule = readFileSync(new URL("./fixtures/winnipeg-published-schedule-2026-10-24.html", import.meta.url), "utf8");
 const page = (sessions: string, options: { context?: string; registration?: string; boundary?: string } = {}) =>
   `<h2>${options.context ?? "TCF CANADA"}</h2><section><h2>Next sessions</h2>${sessions}`
   + `<h2>${options.boundary ?? "Next dates will be announced on"}</h2><h2>October 09, 2026 at 5 PM</h2>`
@@ -34,7 +35,7 @@ test("Winnipeg reads the October 10 positive availability list without inventing
     kind: "published-availability", sourceUrl: WINNIPEG_PAGE,
     caveat: "未注明年份的场次，请在报名时向考点确认。需提交报名表、付款并由考点确认，非即时锁位。",
   });
-  assert.match(message, /官网公布余位/);
+  assert.match(message, /官网公布场次（余位未披露，请向考点确认）/);
   assert.match(message, /November 19/);
   assert.match(message, /December 4/);
   assert.doesNotMatch(message, /个名额|undefined|2026/);
@@ -149,6 +150,42 @@ test("Winnipeg's observed complete next-release-only card has no published exam 
   assert.deepEqual(await scrapeWinnipeg({fetchImpl: async () => htmlResponse(announcementOnly)}), []);
   assert.deepEqual(parseWinnipeg(announcementOnly.replace(/\s+/g, " ")), []);
   assert.deepEqual(parseWinnipeg(announcementOnly.replace("Friday, October 23rd at 5:00pm", "Monday, November 2nd at 10:30 am")), []);
+});
+
+test("Winnipeg's captured new schedule yields three published dates and a validated window, without inventing seats or years", async () => {
+  const slots = await scrapeWinnipeg({fetchImpl: async () => htmlResponse(publishedSchedule)});
+  assert.deepEqual(slots.map(slot => [slot.id, slot.date, slot.startTime, slot.endTime]), [
+    ["winnipeg-december-9", "December 9", "09:50", "18:00"],
+    ["winnipeg-december-11", "December 11", "09:50", "18:00"],
+    ["winnipeg-december-14", "December 14", "09:50", "18:00"],
+  ]);
+  assert.ok(slots.every(slot => slot.availableSeats === undefined && !/20\d\d/.test(slot.date)));
+  assert.deepEqual(parseWinnipeg(publishedSchedule.replace(/\s+/g, " ")), slots);
+  const changedTags = publishedSchedule.replace(/<h3>/g, "<p>").replace(/<\/h3>/g, "</p>");
+  assert.deepEqual(parseWinnipeg(changedTags), slots);
+});
+
+test("Winnipeg's schedule card rejects bad times, contradictory content, hidden markup and unknown or duplicate dates", () => {
+  for (const [from, to] of [
+    ["9:50am", "25:50am"], ["9:50am", "9:99am"], ["9:50am", "0:50am"],
+    ["6:00pm", "8:00am"], ["6:00pm", "9:50am"],
+    ["The EXAM is scheduled from", "The EXAM may be scheduled from"],
+    ["Dec. 09th", "No spots available!<br>Dec. 09th"],
+    ["Dec. 09th", "Dec. 09th (waitlist)"], ["Dec. 09th", "Dec. 32nd"],
+    ["Dec. 11th", "December 9"], ["<section ", "<section hidden "],
+    ["Cancellations for climatic or personal reasons are not possible.", ""],
+    [WINNIPEG_REGISTRATION, "https://other.example/register"],
+  ]) {
+    const changed = publishedSchedule.replace(from, to);
+    assert.notEqual(changed, publishedSchedule, "negative mutation must take effect");
+    assert.throws(() => parseWinnipeg(changed), /Winnipeg:/);
+  }
+  const empty = publishedSchedule.replace(/Dec\. 09th[\s\S]*?Dec\. 14th/, "");
+  assert.throws(() => parseWinnipeg(empty), /Winnipeg:/);
+  // A plain New dates list is still unknown without either recognized context.
+  const noSchedule = publishedSchedule.replace(/<h3>\s*<span style="background-color: #75d777;">[\s\S]*?<\/h3>/, "");
+  assert.notEqual(noSchedule, publishedSchedule);
+  assert.throws(() => parseWinnipeg(noSchedule), /Winnipeg:/);
 });
 
 test("Winnipeg next-release-only state rejects incomplete, conflicting and unknown content", () => {

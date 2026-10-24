@@ -29,8 +29,8 @@ because the centre gives no numeric counts. Since October 11, this branch follow
 semantic text lines rather than requiring two heading elements: headings,
 paragraphs, lists, containers, and `<br>` can delimit dates. It still requires the
 anchored notice and positive banner, exact refund disclaimer as the list boundary,
-and the same validated registration link. Bare dates without that positive context
-remain unknown and throw. The next-announcement date, when present, is outside
+and the same validated registration link. Outside the separately validated published-schedule variant described below,
+bare dates without that positive context remain unknown and throw. The next-announcement date, when present, is outside
 the original session boundary and is never treated as an exam date or reminder.
 
 Month/day spelling is normalized; a missing year stays missing. An explicit
@@ -227,3 +227,17 @@ Toronto paper was in its approved challenge grace on the middle run. Final
 read-only state verified Winnipeg's timestamp had resumed updating, its prior
 notification timestamp was unchanged, and all 14 availability/reminder rows
 were fresh. This completes verification of the observed release-only state.
+
+## October 24 published schedule card
+
+The live card replaced its positive seat banner with an exam-day window
+(9:50am–6:00pm), then a second New dates label and December 9, 11 and 14. Years
+and remaining inventory are not disclosed, and the public form has no session
+inventory. The parser accepts this complete, linked schedule shape with strict
+clock/date/context validation; arbitrary bare-date lists remain unknown. It
+returns published times without inventing years, counts or timezone. Uncounted
+published-date alerts explicitly say **官网公布场次（余位未披露，请向考点确认）**;
+known count messages retain their existing wording. The per-date alert strategy
+and date identities are unchanged. See the
+[October 24 incident](../health-assessment-2026-10-24.md) for source, test and
+production evidence.
