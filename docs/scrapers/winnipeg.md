@@ -241,3 +241,12 @@ known count messages retain their existing wording. The per-date alert strategy
 and date identities are unchanged. See the
 [October 24 incident](../health-assessment-2026-10-24.md) for source, test and
 production evidence.
+
+Commits `eb97e0d` and `d6ecc12` were verified in three automatic runs on October
+24 at 11:40:12, 11:45:12 and 11:50:12 China time. Each passed 216 tests,
+typecheck and the scoped guard with zero forbidden privileges. Winnipeg passed
+all three: the three December dates were announced once, then remained 3 → 3
+without another send. Read-only state and the actual Discord message confirmed
+fresh persistence and unchanged notification time. The first two runs passed
+all 12 sources; the third had Toronto paper's recognized challenge within its
+approved grace, with all other sources OK.
