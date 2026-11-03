@@ -7,7 +7,7 @@
 | **Page(s)** | API: `api.gblc.ca/candidates/test-schedules/?test_id=6&has_available_seats=true` · booking: `gblc.ca/en/book-now/choose-date` |
 | **Discord** | #northyork |
 | **DB key** | city=`northyork`, exam_type=`TCF Canada - Computer` or `TCF Canada - Paper` |
-| **Status** | Computer coverage and approved Paper addition verified in production 2026-10-09; paper notification delivered once and deduplicated on the next cycle |
+| **Status** | Both formats verified; November 3 DNS fallback shipped with 225 tests, three healthy automatic North York cycles and a successful public-only fallback probe on GitHub |
 
 ## How it works
 - `scrapeNorthYork()` GETs the official booking site's public schedule API for
@@ -68,6 +68,17 @@
   public fallback GET passed;
   see the [incident record](../health-assessment-2026-11-03.md) for deployment and
   actual scheduled verification evidence.
+
+  Final repair `c47f8c3` was verified in automatic runs `41616984159`,
+  `41617688592` and `41618392245` at 18:10, 18:15 and 18:20 China time. Each
+  passed 225 tests, typecheck and the restricted guard, with North York retaining
+  104 Computer + 2 Paper and no repeat notification. The last passed all 12
+  sources; Toronto paper had its accepted challenge grace on the first two.
+  The fallback client separately returned the same complete inventory from a
+  read-only CI probe. Ordinary GETs succeeded in these cycles, so automatic
+  scrape recovery via fallback is not yet observed. Final read-only state was
+  fresh and notification timestamps unchanged. Temporary diagnostics/probe were
+  removed; the actual fallback and genuine failure alerts remain active.
 
 - **2026-06-13 (assessment — benign)** — User flagged ~5.6-day silence (last ping
   **Jun 8**) deviating from the near-daily cadence. Investigated: scraper **healthy**

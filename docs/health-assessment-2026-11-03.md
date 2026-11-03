@@ -28,8 +28,10 @@ the real monitor step from offline tests that deliberately print mock failures.
 The 17:30 comparison run and latest failed run both passed 216 tests, typecheck
 and the scoped `tcf_slot_monitor` database guard with **zero forbidden privileges**
 (89 other relations and 43 sequences inspected). Timer dispatch creation times
-in the inspected window remained five minutes apart, with small second-level
-jitter. No manual health-check dispatch was issued.
+in the inspected window were normally five minutes apart (minimum 298 seconds),
+with one ten-minute gap from **13:00:07 to 13:10:07 China time**. The GitHub run
+list does not establish the cause of that missing cycle or guarantee future
+cadence. No manual health-check dispatch was issued.
 
 ## Live source and read-only state
 
@@ -136,4 +138,78 @@ certificate settings, no redirect following, broken/oversized responses and
 fallback activation only after the approved connection failures. A public-only
 GET through the actual fallback, with real certificate verification, returned
 the same **104 Computer + 2 Paper** valid records. Final deployment and normal
-automatic-cycle verification remain pending.
+automatic-cycle verification follows.
+
+## Final repair deployment verification
+
+Commit `c47f8c3` shipped the isolated fallback. First normal run
+[41616984159](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/41616984159),
+created **18:10:07 China time**, passed **225 tests**, typecheck and the scoped
+guard with zero forbidden privileges (89 other relations / 43 sequences).
+North York succeeded with **104 Computer + 2 Paper**, and eleven sources were
+actually OK. Toronto paper returned its recognized challenge within approved
+grace, preserving its snapshot; this was not a new workflow failure. The runner
+and Google resolved `209.38.8.99`, while Cloudflare still returned `74.220.199.6`.
+The initial GET succeeded, so this run did not exercise the fallback branch.
+
+A scoped **read-only check at 18:12:03.362 China time** confirmed both North York
+rows had refreshed (`10:10:40.847Z` / `10:10:40.914Z`) with counts 104 / 2 and
+unchanged notification timestamps from the initial check. No duplicate
+notification was consumed. The remaining automatic-cycle evidence follows.
+
+Second normal run
+[41617688592](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/41617688592),
+created **18:15:07 China time**, again passed 225 tests, typecheck, the scoped
+guard with zero forbidden privileges and all eleven non-paper sources. Toronto
+paper remained explicitly within its approved challenge grace. North York's
+first GET succeeded with the same 106 records; the fallback was not needed.
+DNS diagnostics again showed runner/OS/Google `209.38.8.99` and Cloudflare
+`74.220.199.6`.
+
+Commit `b997391` adds a temporary **public-only fallback probe** to the existing
+diagnostic step, so the next automatic runner can verify the native HTTPS client
+with the isolated resolver even if its ordinary source GET succeeds. This probe
+has no DB/Discord imports or credentials and does not change production state.
+It is distinct from an actual production scrape recovering after failure; its
+result is recorded below. The temporary diagnostic/probe was removed after
+verification.
+
+The four Oncord sites' current Google A records all matched `163.52.34.11`, the
+address in the one earlier shared connection-refusal incident. No matching DNS
+discrepancy was established there, and subsequent source checks recovered; the
+North York resolver change is not applied to those sources.
+
+## Completed verification — 18:21 China time
+
+| Automatic run / revision | Created (China time) | Actual source outcome | North York |
+| --- | --- | --- | --- |
+| [41616984159](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/41616984159) / `c47f8c3` | 18:10:07 | Eleven OK; Toronto paper in approved grace | 104 Computer + 2 Paper; first GET succeeded |
+| [41617688592](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/41617688592) / `c47f8c3` | 18:15:07 | Eleven OK; Toronto paper in approved grace | Same inventory; first GET succeeded |
+| [41618392245](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/41618392245) / `b997391` | 18:20:07 | **All 12 OK**, including Toronto paper | Same inventory; first GET succeeded |
+
+Each normal workflow passed **225 tests**, typecheck and the scoped
+`tcf_slot_monitor` guard with **zero forbidden privileges**. Creation intervals
+were five minutes. The temporary public-only fallback probe in the final run
+returned **HTTP 200, 106 records (104 Computer / 2 Paper)** at
+`2026-11-03T10:20:30.310Z`. Thus the actual fallback HTTPS/DNS client was exercised
+successfully on GitHub with normal certificate verification. This was a
+read-only probe; none of these three production scrape requests required the
+fallback, so an automatic scrape recovering through that branch has **not** yet
+been observed. This distinction limits the live recovery claim.
+
+A final scoped **read-only transaction at 18:21:37.567 China time** confirmed
+all **14 availability/reminder rows** were refreshed during the 18:20 cycle,
+excluding health metadata. North York had 104 Computer and 2 Paper records,
+checked at `10:20:41.511Z` / `10:20:41.583Z`. Its notification timestamps remained
+`2026-11-03T00:00:38.493Z` and `2026-10-26T18:06:21.130Z`, unchanged from the
+initial check; all three production logs had no North York notification send.
+Toronto paper, Halifax and Ottawa health records all had current successful
+checks with cleared incident markers. Toronto's recovery is an observation,
+not a permanent repair of its intermittent challenge.
+
+The temporary DNS diagnostic and public probe are removed from CI after this
+verification; production retains only the bounded, hostname-scoped fallback and
+regression tests. No further production probe or dispatch was requested, no
+local follow-up automation was created, and no DB/Discord state was written by
+the checks. The monitor is currently healthy; upstream DNS inconsistency may
+persist, and exhausted or ineligible failures will still alert normally.
