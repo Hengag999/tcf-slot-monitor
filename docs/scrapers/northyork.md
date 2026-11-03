@@ -43,8 +43,24 @@
 - **Future API changes fail visibly.** A paginated envelope is not guessed or
   silently flattened; investigate the booking site's new complete-fetch contract
   before changing the parser.
+- **Intermittent connection establishment failures:** only observed
+  `ECONNREFUSED` and `UND_ERR_CONNECT_TIMEOUT` receive up to three GET attempts,
+  with 1s/2s backoff and a fresh 30s deadline. Exhaustion still fails the workflow
+  immediately and preserves both formats. HTTP, TLS, DNS, unknown transport,
+  response-body and inventory errors are not retried. No one-hour grace or
+  repeat-alert suppression applies to North York.
 
 ## Incident log
+- **2026-11-03 (connection resilience)** — All 19 failed logs in a 100-run window
+  were inspected: 18 were North York connection refusals/timeouts, interspersed
+  with successful checks; one other run affected several Oncord sources and later
+  recovered. Public North York checks returned 104 Computer and 2 Paper records,
+  matching read-only state counts. Added bounded retries only for the two
+  evidenced connection-establishment errors, retaining visible failure and
+  snapshot preservation after exhaustion. All 220 tests and typecheck passed;
+  see the [incident record](../health-assessment-2026-11-03.md) for deployment and
+  actual scheduled verification evidence.
+
 - **2026-06-13 (assessment — benign)** — User flagged ~5.6-day silence (last ping
   **Jun 8**) deviating from the near-daily cadence. Investigated: scraper **healthy**
   — `checked_at` 2 min fresh, returns **121 live slots / 50 dates (Jun 17 → Sep 27)**,

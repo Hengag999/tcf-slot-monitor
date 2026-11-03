@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { createSources, processCity, type MonitorDependencies } from "../scripts/scrape-slots";
+import { createSources, processCity, runMonitor, type MonitorDependencies } from "../scripts/scrape-slots";
 import { NORTH_YORK_API_URL, parseNorthYorkSchedules, scrapeNorthYork } from "../scripts/scrapers/northyork";
 import type { StateRow } from "../src/lib/db";
 
@@ -62,6 +62,99 @@ test("North York rejects inconsistent availability rather than accepting a parti
 test("North York accepts a valid empty response and rejects failed requests", async () => {
   assert.deepEqual(await scrapeNorthYork({ fetchImpl: fakeFetch([]) }), []);
   await assert.rejects(scrapeNorthYork({ fetchImpl: fakeFetch({}, 503) }), /503/);
+});
+
+function connectionError(code: string): TypeError {
+  return new TypeError("private transport details", { cause: Object.assign(new Error("private endpoint"), { code }) });
+}
+
+function requestSequence(outcomes: (Error | Response)[]) {
+  const signals: AbortSignal[] = [];
+  const sleeps: number[] = [];
+  let calls = 0;
+  return {
+    calls: () => calls,
+    signals,
+    sleeps,
+    fetchImpl: (async (input, init) => {
+      assert.equal(String(input), NORTH_YORK_API_URL);
+      assert.equal(init?.redirect, "error");
+      assert.ok(init?.signal);
+      signals.push(init.signal);
+      const outcome = outcomes[calls++];
+      assert.notEqual(outcome, undefined, "unexpected retry beyond supplied responses");
+      if (outcome instanceof Error) throw outcome;
+      return outcome;
+    }) as typeof fetch,
+    sleep: async (ms: number) => { sleeps.push(ms); },
+  };
+}
+
+test("North York recovers observed connection failures with bounded GET backoff and fresh deadlines", async () => {
+  const io = requestSequence([connectionError("ECONNREFUSED"), connectionError("UND_ERR_CONNECT_TIMEOUT"),
+    new Response(JSON.stringify(fixture))]);
+  assert.deepEqual(await scrapeNorthYork(io), parseNorthYorkSchedules(fixture));
+  assert.equal(io.calls(), 3);
+  assert.deepEqual(io.sleeps, [1000, 2000]);
+  assert.equal(new Set(io.signals).size, 3);
+});
+
+test("North York exhaustion fails the workflow without reading or overwriting either format", async () => {
+  const io = requestSequence(Array.from({ length: 3 }, () => connectionError("ECONNREFUSED")));
+  const source = createSources().find(city => city.key === "northyork")!;
+  const fail = async () => assert.fail("failed scrape must not access state or Discord");
+  const summary = process.env.GITHUB_STEP_SUMMARY;
+  delete process.env.GITHUB_STEP_SUMMARY;
+  try {
+    await assert.rejects(runMonitor([{ ...source, scrape: () => scrapeNorthYork(io) }], false, {
+      getPrevState: fail, upsertState: fail, notifyDiscord: fail, runRegistrationReminders: fail,
+    }), /northyork \(scrape\)/);
+    assert.equal(io.calls(), 3);
+    assert.deepEqual(io.sleeps, [1000, 2000]);
+  } finally {
+    if (summary !== undefined) process.env.GITHUB_STEP_SUMMARY = summary;
+  }
+  const exhausted = requestSequence(Array.from({ length: 3 }, () => connectionError("UND_ERR_CONNECT_TIMEOUT")));
+  await assert.rejects(scrapeNorthYork(exhausted), error => {
+    assert.equal((error as Error).message, "GBLC: schedule connection failed after 3 attempts (code=UND_ERR_CONNECT_TIMEOUT)");
+    assert.equal((error as Error).cause, undefined);
+    return true;
+  });
+});
+
+test("North York never retries HTTP responses, unknown transport errors, TLS, DNS or response-body failures", async () => {
+  const failures = [new Error("unknown"), connectionError("ENOTFOUND"), connectionError("CERT_HAS_EXPIRED"),
+    connectionError("ECONNRESET"), new AggregateError([connectionError("ECONNREFUSED"), new Error("unknown")]),
+    new TypeError("unknown wrapper", { cause: new Error("unknown") })];
+  for (const failure of failures) {
+    const io = requestSequence([failure]);
+    await assert.rejects(scrapeNorthYork(io), /non-retryable transport error/);
+    assert.equal(io.calls(), 1);
+    assert.deepEqual(io.sleeps, []);
+  }
+  for (const status of [301, 401, 403, 429, 500, 503]) {
+    const io = requestSequence([new Response("unread error body", { status })]);
+    await assert.rejects(scrapeNorthYork(io), new RegExp(`GBLC API error ${status}`));
+    assert.equal(io.calls(), 1);
+    assert.deepEqual(io.sleeps, []);
+  }
+  const response = new Response("[]");
+  response.json = async () => { throw connectionError("ECONNREFUSED"); };
+  const io = requestSequence([response]);
+  await assert.rejects(scrapeNorthYork(io));
+  assert.equal(io.calls(), 1, "body errors must never replay a response");
+});
+
+test("North York connection recovery still requires complete valid inventory and stops on a different failure", async () => {
+  for (const response of [new Response(JSON.stringify({ results: fixture })),
+    new Response(JSON.stringify([fixture[0], { ...fixture[1], seats: 0 }])),
+    new Response("not JSON"), new Response("blocked", { status: 403 }),
+    connectionError("CERT_HAS_EXPIRED")]) {
+    const io = requestSequence([connectionError("ECONNREFUSED"), response]);
+    await assert.rejects(scrapeNorthYork(io));
+    assert.equal(io.calls(), 2);
+    assert.deepEqual(io.sleeps, [1000]);
+  }
 });
 
 test("configured North York source sends only new Paper dates and deduplicates each format independently", async (t) => {

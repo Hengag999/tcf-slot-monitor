@@ -78,11 +78,39 @@ export function parseNorthYorkSchedules(data: unknown): Slot[] {
   }));
 }
 
-export async function scrapeNorthYork(options: { fetchImpl?: typeof fetch } = {}): Promise<Slot[]> {
-  const res = await (options.fetchImpl ?? fetch)(NORTH_YORK_API_URL, {
-    signal: AbortSignal.timeout(30_000),
-    redirect: "error",
-  });
+// Only the two connection-establishment failures observed in CI are retried.
+// HTTP, TLS, DNS, body-read and inventory failures retain immediate failure.
+function connectionFailureCode(error: unknown): string | undefined {
+  if (!(error instanceof Error)) return undefined;
+  const leaf = error instanceof TypeError && !("code" in error) && error.cause instanceof Error
+    ? error.cause : error;
+  if (leaf.cause !== undefined || leaf instanceof AggregateError) return undefined;
+  const code = (leaf as NodeJS.ErrnoException).code;
+  return code === "ECONNREFUSED" || code === "UND_ERR_CONNECT_TIMEOUT" ? code : undefined;
+}
+
+export async function scrapeNorthYork(options: {
+  fetchImpl?: typeof fetch;
+  sleep?: (milliseconds: number) => Promise<void>;
+} = {}): Promise<Slot[]> {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)));
+  let res!: Response;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      res = await fetchImpl(NORTH_YORK_API_URL, {
+        signal: AbortSignal.timeout(30_000),
+        redirect: "error",
+      });
+      break;
+    } catch (error) {
+      const code = connectionFailureCode(error);
+      if (!code) throw new Error("GBLC: schedule request failed (non-retryable transport error)");
+      if (attempt === 3) throw new Error(`GBLC: schedule connection failed after 3 attempts (code=${code})`);
+      console.warn(`[northyork] schedule connection ${code}; retry ${attempt}/2`);
+      await sleep(attempt * 1000);
+    }
+  }
   if (!res.ok) throw new Error(`GBLC API error ${res.status}`);
 
   const slots = parseNorthYorkSchedules(await res.json());
