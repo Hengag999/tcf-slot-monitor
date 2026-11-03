@@ -1,6 +1,8 @@
 // North York scraper (GB Language Centre)
 // Calls the GBLC TCF Canada schedules API for both Computer and Paper.
 // The booking site offers both formats; restricting format_id to 5 hid paper.
+import { fetchNorthYorkViaPublicDns, NORTH_YORK_API_URL, type NorthYorkApiResponse } from "../../src/lib/northYorkConnection";
+export { NORTH_YORK_API_URL } from "../../src/lib/northYorkConnection";
 
 export interface Slot {
   id: string;
@@ -11,10 +13,6 @@ export interface Slot {
   availableSeats: number;
   bookingUrl: string;
 }
-
-export const NORTH_YORK_API_URL =
-  "https://api.gblc.ca/candidates/test-schedules/" +
-  "?test_id=6&has_available_seats=true";
 
 const BOOKING_URL = "https://www.gblc.ca/en/book-now/choose-date";
 
@@ -91,23 +89,24 @@ function connectionFailureCode(error: unknown): string | undefined {
 
 export async function scrapeNorthYork(options: {
   fetchImpl?: typeof fetch;
+  publicDnsFetchImpl?: (signal: AbortSignal) => Promise<NorthYorkApiResponse>;
   sleep?: (milliseconds: number) => Promise<void>;
 } = {}): Promise<Slot[]> {
   const fetchImpl = options.fetchImpl ?? fetch;
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)));
-  let res!: Response;
+  let res!: NorthYorkApiResponse;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      res = await fetchImpl(NORTH_YORK_API_URL, {
-        signal: AbortSignal.timeout(30_000),
-        redirect: "error",
-      });
+      const signal = AbortSignal.timeout(30_000);
+      res = attempt === 1
+        ? await fetchImpl(NORTH_YORK_API_URL, { signal, redirect: "error" })
+        : await (options.publicDnsFetchImpl ?? fetchNorthYorkViaPublicDns)(signal);
       break;
     } catch (error) {
       const code = connectionFailureCode(error);
       if (!code) throw new Error("GBLC: schedule request failed (non-retryable transport error)");
       if (attempt === 3) throw new Error(`GBLC: schedule connection failed after 3 attempts (code=${code})`);
-      console.warn(`[northyork] schedule connection ${code}; retry ${attempt}/2`);
+      console.warn(`[northyork] schedule connection ${code}; retry ${attempt}/2 via isolated public DNS`);
       await sleep(attempt * 1000);
     }
   }

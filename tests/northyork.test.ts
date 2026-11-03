@@ -72,20 +72,22 @@ function requestSequence(outcomes: (Error | Response)[]) {
   const signals: AbortSignal[] = [];
   const sleeps: number[] = [];
   let calls = 0;
+  const fetchImpl = (async (input, init) => {
+    assert.equal(String(input), NORTH_YORK_API_URL);
+    assert.equal(init?.redirect, "error");
+    assert.ok(init?.signal);
+    signals.push(init.signal);
+    const outcome = outcomes[calls++];
+    assert.notEqual(outcome, undefined, "unexpected retry beyond supplied responses");
+    if (outcome instanceof Error) throw outcome;
+    return outcome;
+  }) as typeof fetch;
   return {
     calls: () => calls,
     signals,
     sleeps,
-    fetchImpl: (async (input, init) => {
-      assert.equal(String(input), NORTH_YORK_API_URL);
-      assert.equal(init?.redirect, "error");
-      assert.ok(init?.signal);
-      signals.push(init.signal);
-      const outcome = outcomes[calls++];
-      assert.notEqual(outcome, undefined, "unexpected retry beyond supplied responses");
-      if (outcome instanceof Error) throw outcome;
-      return outcome;
-    }) as typeof fetch,
+    fetchImpl,
+    publicDnsFetchImpl: (signal: AbortSignal) => fetchImpl(NORTH_YORK_API_URL, { signal, redirect: "error" }),
     sleep: async (ms: number) => { sleeps.push(ms); },
   };
 }

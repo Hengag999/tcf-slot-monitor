@@ -68,4 +68,72 @@ infrastructure are unchanged.
 passed. New tests cover same-run recovery, bounded exhaustion as a real
 orchestration failure without state/Discord access, fresh deadlines, immediate
 HTTP/TLS/DNS/unknown/body failures, and strict inventory validation after retry.
-Production deployment and automatic-run evidence will be appended below.
+Deployment and subsequent investigation are recorded below.
+
+## Initial deployment observations — investigation remains open
+
+`03d1dfb` shipped the bounded retry repair. The 17:45:07 automatic run
+[41613558170](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/41613558170)
+passed 220 tests, typecheck and the scoped guard, but North York exhausted two
+connection timeouts followed by a connection refusal. The workflow correctly
+failed while the other eleven sources succeeded. Thus retries alone have not
+established recovery. At 17:50:07,
+[41614229388](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/41614229388)
+passed all 12 sources with 106 North York records and no retry; the intermittent
+pattern persists.
+
+The earlier failed connections used `74.220.199.6`. During investigation, Google
+and Cloudflare recursive DNS and **both domain-authoritative nameservers**
+(`ns1.bluehost.com`, `ns2.bluehost.com`) returned `209.38.8.99` for `api.gblc.ca`.
+This discrepancy warrants runner-side investigation; it does not by itself prove
+which component returned the earlier address. Local DNS is mediated by the
+user's proxy, so its synthetic `198.18.*` answers are not evidence about GitHub.
+The official booking page rendered 106 TCF Canada cards and loaded the same
+`api.gblc.ca/candidates/test-schedules/` endpoint. No booking was selected or
+submitted.
+
+Commits `b366aed` / `0c6c9b9` add a read-only CI DNS comparison: runner recursive
+DNS, OS lookup, Google and Cloudflare public recursive answers. These requests
+carry no secrets, are bounded, and never alter DNS/hosts settings or affect the
+real scraper's success/failure decision.
+
+## Confirmed DNS inconsistency and targeted fallback
+
+Automatic run [41614903078](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/41614903078),
+created **17:55:07 China time** on `0c6c9b9`, confirmed different public answers
+from the same runner at 17:55:38:
+
+| Lookup | API IPv4 answer |
+| --- | --- |
+| Runner recursive resolver | `209.38.8.99` |
+| Runner OS lookup | `209.38.8.99` |
+| Google public resolver | `209.38.8.99` |
+| Cloudflare public resolver | `74.220.199.6` |
+
+The normal request succeeded with 106 records and all 12 sources passed. Combined
+with earlier connection-refusal logs to `74.220.199.6`, this is direct evidence
+of inconsistent DNS answers that explains at least the refused connections.
+The destination of every earlier timeout was not logged, so those cannot all
+be conclusively assigned to that address. The centre's authoritative DNS and
+public caches have not been repaired by this repository.
+
+The final repair retains ordinary system resolution for the first GET. After
+either approved connection-establishment failure, attempts two/three use an
+**isolated Google DNS resolver for `api.gblc.ca` only**, then Node HTTPS with
+the original hostname, normal hostname/SNI certificate verification explicitly
+enabled, no shared pooled agent, and the same exact public schedule path/query.
+There is no pinned destination IP, global resolver/hosts edit, TLS bypass,
+alternate API, or request with credentials. DNS queries have a 2-second,
+single-query bound; each full HTTPS attempt keeps the 30-second abort deadline.
+The fallback rejects incomplete or oversized bodies, never follows redirects,
+and still runs the existing complete-inventory parser. HTTP/TLS/DNS/unknown
+failures remain immediate; three eligible connection failures still fail the
+workflow and preserve state. No grace or repeat-email suppression was added.
+
+All **225 tests** and typecheck pass. Additional tests cover lookup target scope,
+both Node callback forms, invalid DNS results, original HTTPS identity and
+certificate settings, no redirect following, broken/oversized responses and
+fallback activation only after the approved connection failures. A public-only
+GET through the actual fallback, with real certificate verification, returned
+the same **104 Computer + 2 Paper** valid records. Final deployment and normal
+automatic-cycle verification remain pending.

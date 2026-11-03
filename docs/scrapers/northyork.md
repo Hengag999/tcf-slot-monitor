@@ -45,7 +45,11 @@
   before changing the parser.
 - **Intermittent connection establishment failures:** only observed
   `ECONNREFUSED` and `UND_ERR_CONNECT_TIMEOUT` receive up to three GET attempts,
-  with 1s/2s backoff and a fresh 30s deadline. Exhaustion still fails the workflow
+  with 1s/2s backoff and a fresh 30s deadline. The first request uses normal DNS;
+  subsequent attempts use a request-local Google resolver for this API hostname
+  with normal HTTPS certificate/SNI verification. No API IP is pinned and no
+  global DNS/hosts settings change. This addresses inconsistent public DNS
+  answers directly observed from CI on November 3. Exhaustion still fails the workflow
   immediately and preserves both formats. HTTP, TLS, DNS, unknown transport,
   response-body and inventory errors are not retried. No one-hour grace or
   repeat-alert suppression applies to North York.
@@ -57,7 +61,11 @@
   recovered. Public North York checks returned 104 Computer and 2 Paper records,
   matching read-only state counts. Added bounded retries only for the two
   evidenced connection-establishment errors, retaining visible failure and
-  snapshot preservation after exhaustion. All 220 tests and typecheck passed;
+  snapshot preservation after exhaustion. The first repaired run still exhausted
+  retries. A read-only diagnostic then confirmed inconsistent public DNS answers
+  on the same runner; added hostname-scoped DNS fallback for attempts two/three
+  with original HTTPS identity checks. All 225 tests, typecheck and a real
+  public fallback GET passed;
   see the [incident record](../health-assessment-2026-11-03.md) for deployment and
   actual scheduled verification evidence.
 
