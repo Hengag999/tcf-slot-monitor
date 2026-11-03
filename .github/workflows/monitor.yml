@@ -28,6 +28,8 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run typecheck
+      - name: Compare North York public DNS answers
+        run: npx tsx scripts/diagnose-northyork-dns.ts
       - name: Verify scoped database credentials
         run: npx tsx scripts/check-db-permissions.ts
         env:
