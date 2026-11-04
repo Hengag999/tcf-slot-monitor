@@ -66,6 +66,18 @@
   repeat-alert suppression applies to North York.
 
 ## Incident log
+- **2026-11-04 afternoon (confirmed request resets)** — The safe diagnostics
+  identified three recent immediate failures as native `ECONNRESET`. Added that
+  request-stage error to the existing bounded three-attempt GET recovery; body
+  errors after headers remain immediate and cannot be retried by this change.
+  All 235 tests/typecheck passed. Normal runs `41798078469`, `41798717255` and
+  `41799359528` passed all 12 sources and the scoped guard with zero forbidden
+  privileges, retaining 151 Computer + 2 Paper without changing notification
+  timestamps. No real request reset occurred in those three successful runs,
+  so live recovery via the new branch is not yet observed. A quiet 15-minute
+  follow-up continues until about 19:30 China time. See the
+  [network incident record](../health-assessment-2026-11-04-network.md).
+
 - **2026-11-03 (connection resilience)** — All 19 failed logs in a 100-run window
   were inspected: 18 were North York connection refusals/timeouts, interspersed
   with successful checks; one other run affected several Oncord sources and later
