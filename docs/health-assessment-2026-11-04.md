@@ -72,7 +72,7 @@ checks remain.
 A public-source-only repaired computer check traversed four top-level rows,
 found two concrete sessions, and returned only **129591, November 6, 7 openings**.
 No local live pipeline, production state write or Discord send was performed.
-Deployment, actual delivery and normal automatic-run evidence remain pending.
+Deployment, actual delivery and normal automatic-run evidence follow.
 
 ## First automatic recovery and actual Discord delivery
 
@@ -88,7 +88,7 @@ The actual existing Toronto-channel message was independently read in Ego:
 timestamp `2026-11-04T04:55:35.666Z`. It contains one `@everyone`, November 6,
 seven seats and the booking link for **129591**, with neither parent advertised.
 No synthetic message or manual production dispatch was used. Subsequent-cycle
-deduplication and final read-only state evidence remain pending.
+deduplication and final read-only state evidence are recorded below.
 
 ## Earlier intervening failures and diagnostic limit
 
@@ -110,3 +110,48 @@ continue to fail immediately without retries or grace. The existing eligible
 connection fallback is unchanged. A regression verifies both safe logging and
 unchanged immediate failure. The current complete suite is **232 passing tests**,
 with typecheck passing.
+
+## Second automatic cycle
+
+Normal run [41776546107](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/41776546107),
+created **13:00:15 China time** on `8fcaa2a`, passed **232 tests**, typecheck,
+the scoped guard with **zero forbidden privileges**, and **all 12 sources**.
+Toronto computer still held the one November 6 sitting, with no Discord send.
+The safe North York diagnostics were deployed without changing retry or alert
+eligibility. Final scheduled-cycle, read-only persistence and channel checks
+follow.
+
+## Completed production verification — 13:06 China time
+
+| Automatic run / revision | Created (China time) | Tests / typecheck / scoped guard | Actual source outcomes | Toronto notification |
+| --- | --- | --- | --- | --- |
+| [41776072487](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/41776072487) / `a351034` | 12:55:15 | 231 passed / passed / zero forbidden privileges | **All 12 OK** | One November 6 alert accepted |
+| [41776546107](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/41776546107) / `8fcaa2a` | 13:00:15 | 232 passed / passed / zero forbidden privileges | **All 12 OK** | One sitting retained; no send |
+| [41777067681](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/41777067681) / `8fcaa2a` | 13:05:15 | 232 passed / passed / zero forbidden privileges | **All 12 OK** | One sitting retained; no send |
+
+Creation intervals were five minutes. All three permission guards verified
+`tcf_slot_monitor` and inspected 89 other relations / 43 sequences with zero
+forbidden privileges. The additional North York diagnostics are the reason for
+the test-count increase; all four earlier unidentified North York failures
+remain unclassified historical observations, not demonstrated repairs.
+
+A final scoped **read-only transaction at 13:06:53.892 China time** confirmed
+all **14 availability/reminder rows** refreshed in the 13:05 cycle, excluding
+all `__monitor_health__` metadata. Toronto computer stored exactly concrete
+activity **129591**, November 6, seven available seats, and the correct leaf
+booking URL. Its `checked_at` was `2026-11-04T05:05:35.834Z`; `notified_at`
+remained `2026-11-04T04:55:39.370Z`, the accepted first alert. No parent IDs
+were persisted as availability. Toronto paper, Halifax and Ottawa had current
+successful health records with both incident markers cleared.
+
+The final Discord browser read after the third run still showed
+`1567401907494846625` as the latest Toronto message and one rendered message
+linking to 129591. Together with no sends in the later two logs and the unchanged
+notification timestamp, this verifies one genuine announcement with no duplicate
+over the observed cycles. The browser task was finished and closed.
+
+Verification of the observed nested Toronto hierarchy repair is complete.
+No failure alert was muted, no policy broadened, no production state was written
+by checks, and no credential/grant/schema or unrelated infrastructure changed.
+No temporary local follow-up automation was created. Unknown future hierarchy
+or transport failures will still surface and preserve snapshots.

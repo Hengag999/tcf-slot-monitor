@@ -7,7 +7,7 @@
 | **Page** | [Official registration page](https://www.alliance-francaise.ca/en/exams/tests/informations-about-tcf-canada/tcf-canada) |
 | **Discord** | #toronto |
 | **DB keys** | city=`toronto`, exam_type=`E-TCF Canada` and `P-TCF Canada` |
-| **Status** | **October 17 repair `65ce999` deployed:** complete child collections are consumed once despite misleading page counts. Three consecutive timer runs passed 195 tests, the scoped guard, and all 12 sources; read-only state confirms recovery. Current computer discovery covers four full sessions across three groups. See the [October 17 incident record](../health-assessment-2026-10-17.md). Paper retains its approved one-hour policy. |
+| **Status** | **November 4 nested-group repair `a351034` deployed:** three consecutive automatic runs passed all 12 sources and the scoped guard, with 231 then 232 tests/typecheck. The concrete November 6 session was announced once; read-only state and Discord confirm fresh persistence without duplicate alerts. See the [November 4 incident record](../health-assessment-2026-11-04.md). Paper retains its approved one-hour policy. |
 
 ## Current behavior
 
@@ -21,7 +21,9 @@
   requests despite synthetic pagination metadata. Unique IDs, the parent child
   count, and any explicit advertised ID list must still match. A genuinely partial
   child response still requires all pages; top-level search always follows its
-  advertised pages. Duplicate, missing, wrong-format, or nested children fail.
+  advertised pages. Duplicate, missing, wrong-format, cyclic or incomplete
+  descendants fail; valid nested navigation groups are traversed under the
+  same completeness checks and never treated as bookable sittings.
 - The retained `scrapeToronto()` aggregate rejects if either source fails. The standalone script uses both independent sources, prints each outcome and surviving results, and exits nonzero if coverage is incomplete.
 - Requests have a 20-second timeout and at most three attempts. Network failures, HTTP 429/5xx, and non-JSON responses are retried. Other HTTP errors such as 403 fail immediately. Requests identify themselves as `TCF-Slot-Monitor/1.0 (+https://github.com/Hengag999/tcf-slot-monitor)`; no cookies, clearance tokens, or browser runtime are required for the verified local result.
   The recognized CM paper HTTP 202 HTML SiteGround challenge is now an exception:
@@ -88,14 +90,23 @@ A reminder for these releases would be useful independently of cancellation-seat
 
 ### November 4, 2026 — nested navigation group
 
-The centre changed child 129467 of parent 129466 into another parent. Its own
-child discovery now yields concrete session 129591 (November 6). Both nested
+The public hierarchy exposed parent 129467 beneath parent 129466. Its own
+child discovery yields concrete session 129591 (November 6). Both nested
 parent and leaf details reported seven openings, but only the leaf had
 `is_parent_activity=false`; the UI exposed it after two group expansions.
 Added bounded recursive discovery with count/ID/pagination checks at every
 level, global cycle/duplicate rejection and unchanged concrete detail checks.
 All 231 tests, typecheck and a public-only repaired scrape passed. See the
 [incident and deployment evidence](../health-assessment-2026-11-04.md).
+
+Normal runs `41776072487`, `41776546107` and `41777067681` at 12:55, 13:00 and
+13:05 China time passed all 12 sources and the scoped guard. The first passed
+231 tests; subsequent runs passed the current 232-test suite and typecheck.
+November 6, seven seats, was announced once using the concrete 129591 link.
+The later two cycles retained the sitting with no send. Final read-only state
+was fresh across all 14 availability/reminder rows, with Toronto's notification
+timestamp unchanged since the first accepted alert. Actual Discord readback
+confirmed the unique message. No alert-policy change was needed.
 
 ### 2026-10-07 — intermittent paper HTTP 202 during timer verification
 
