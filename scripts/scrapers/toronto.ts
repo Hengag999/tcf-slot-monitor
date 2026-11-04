@@ -314,24 +314,32 @@ async function discoverComputerActivities(): Promise<AcItem[]> {
   }, "activity_items", "AC TCF list");
   const computer = top.filter(item => /^E[-\s]*TCF\b/i.test(item.name));
   const leaves: AcItem[] = [];
-  for (const item of computer) {
-    if (!item.parent_activity) { leaves.push(item); continue; }
+  const visited = new Set<number>();
+  const visit = async (item: AcItem, depth: number): Promise<void> => {
+    if (visited.has(item.id)) {
+      throw new Error("AC computer hierarchy contains duplicate or cyclic activities; availability unknown");
+    }
+    if (depth > 8 || visited.size >= 500) {
+      throw new Error("AC computer hierarchy exceeds bounded traversal; availability unknown");
+    }
+    visited.add(item.id);
+    if (!item.parent_activity) { leaves.push(item); return; }
     // Follow children even when their parent says Full/On Hold. The parent is a
     // navigation group, and its own space count is never a bookable candidate.
-    if (item.num_of_sub_activities === 0) continue;
+    if (item.num_of_sub_activities === 0) return;
     const ids = item.sub_activity_ids;
     const children = await fetchAcPages(`subs/${item.id}`, {
       sub_activity_ids: ids?.join(",") ?? "", activity_transfer_pattern: {}, open_spots: 0,
     }, "sub_activities", `AC children of ${item.id}`);
     if (children.length !== item.num_of_sub_activities || children.some(child => (ids !== null && !ids.includes(child.id))
-      || child.parent_activity || !/^E[-\s]*TCF\b/i.test(child.name))) {
+      || !/^E[-\s]*TCF\b/i.test(child.name))) {
       throw new Error(`AC children of ${item.id}: incomplete or unexpected children; availability unknown`);
     }
-    leaves.push(...children);
-  }
-  if (new Set(leaves.map(item => item.id)).size !== leaves.length) {
-    throw new Error("AC computer hierarchy contains duplicate child activities; availability unknown");
-  }
+    // AC can nest navigation groups (observed 129466 -> 129467 -> 129591).
+    // Every level must be complete; only concrete leaves may reach detail checks.
+    for (const child of children) await visit(child, depth + 1);
+  };
+  for (const item of computer) await visit(item, 0);
   console.log(`[toronto:computer] ${computer.length} E-TCF top-level row(s), ${leaves.length} concrete activity/activities`);
   return leaves;
 }

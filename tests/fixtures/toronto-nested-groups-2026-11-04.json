@@ -1,0 +1,167 @@
+{
+  "listing": {
+    "headers": {
+      "response_code": "0000",
+      "page_info": {
+        "order_by": "Name",
+        "order_option": "ASC",
+        "total_page": 1,
+        "total_records_per_page": 20,
+        "total_records": 4,
+        "page_number": 1
+      }
+    },
+    "body": {
+      "activity_items": [
+        {
+          "id": 129586,
+          "name": "E-TCF CANADA - 4 modules",
+          "number": "TCFC091126-MS",
+          "parent_activity": true,
+          "num_of_sub_activities": 0,
+          "sub_activity_ids": null,
+          "urgent_message": {
+            "group_id": 3,
+            "status_description": "Full",
+            "no_urgency_status_description": null
+          }
+        },
+        {
+          "id": 129588,
+          "name": "E-TCF CANADA - 4 modules",
+          "number": "TCFC111126-MS",
+          "parent_activity": true,
+          "num_of_sub_activities": 0,
+          "sub_activity_ids": null,
+          "urgent_message": {
+            "group_id": 3,
+            "status_description": "Full",
+            "no_urgency_status_description": null
+          }
+        },
+        {
+          "id": 129590,
+          "name": "E-TCF CANADA - 4 modules",
+          "number": "TCFC131126-MS",
+          "parent_activity": false,
+          "num_of_sub_activities": 0,
+          "sub_activity_ids": null,
+          "urgent_message": {
+            "group_id": 3,
+            "status_description": "Full",
+            "no_urgency_status_description": null
+          }
+        },
+        {
+          "id": 129466,
+          "name": "E-TCF CANADA - 4 modules",
+          "number": "TCFC061126-MS",
+          "parent_activity": true,
+          "num_of_sub_activities": 1,
+          "sub_activity_ids": [
+            129467
+          ],
+          "urgent_message": {
+            "group_id": 2,
+            "status_description": "On hold",
+            "no_urgency_status_description": null
+          }
+        }
+      ]
+    }
+  },
+  "children": {
+    "129466": {
+      "headers": {
+        "response_code": "0000",
+        "page_info": {
+          "order_by": "",
+          "order_option": "ASC",
+          "total_page": 1,
+          "total_records_per_page": 1,
+          "total_records": 1,
+          "page_number": 1
+        }
+      },
+      "body": {
+        "sub_activities": [
+          {
+            "id": 129467,
+            "name": "E-TCF CANADA - 4 modules",
+            "number": "SCTCFC061126-MS",
+            "parent_activity": true,
+            "num_of_sub_activities": 1,
+            "sub_activity_ids": null,
+            "urgent_message": {
+              "group_id": 0,
+              "status_description": "",
+              "no_urgency_status_description": null
+            }
+          }
+        ]
+      }
+    },
+    "129467": {
+      "headers": {
+        "response_code": "0000",
+        "page_info": {
+          "order_by": "",
+          "order_option": "ASC",
+          "total_page": 1,
+          "total_records_per_page": 1,
+          "total_records": 1,
+          "page_number": 1
+        }
+      },
+      "body": {
+        "sub_activities": [
+          {
+            "id": 129591,
+            "name": "E-TCF CANADA - 4 modules",
+            "number": "SCTCFCB061126-MS",
+            "parent_activity": false,
+            "num_of_sub_activities": 0,
+            "sub_activity_ids": null,
+            "urgent_message": {
+              "group_id": 1,
+              "status_description": "Starting soon",
+              "no_urgency_status_description": null
+            }
+          }
+        ]
+      }
+    }
+  },
+  "details": {
+    "129467": {
+      "headers": {
+        "response_code": "0000"
+      },
+      "body": {
+        "detail": {
+          "activity_id": 129467,
+          "activity_name": "E-TCF CANADA - 4 modules",
+          "activity_number": "SCTCFC061126-MS",
+          "space_status": "7 openings remaining",
+          "first_date": "2026-11-06",
+          "is_parent_activity": true
+        }
+      }
+    },
+    "129591": {
+      "headers": {
+        "response_code": "0000"
+      },
+      "body": {
+        "detail": {
+          "activity_id": 129591,
+          "activity_name": "E-TCF CANADA - 4 modules",
+          "activity_number": "SCTCFCB061126-MS",
+          "space_status": "7 openings remaining",
+          "first_date": "2026-11-06",
+          "is_parent_activity": false
+        }
+      }
+    }
+  }
+}

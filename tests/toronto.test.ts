@@ -10,6 +10,7 @@ const nullChildIds = JSON.parse(readFileSync(new URL("./fixtures/toronto-null-ch
 // Minimal public hierarchy fields captured October 17. The child endpoint
 // returns both records on page 1 despite advertising two pages of one record.
 const completeChildren = JSON.parse(readFileSync(new URL("./fixtures/toronto-complete-child-pages-2026-10-17.json", import.meta.url), "utf8"));
+const nestedGroups = JSON.parse(readFileSync(new URL("./fixtures/toronto-nested-groups-2026-11-04.json", import.meta.url), "utf8"));
 const item = (id = 123, format = "paper") => ({
   id, name: `${format === "computer" ? "E" : "P"}-TCF CANADA - 4 modules`,
   status: 0, open_spaces: 1, other_category: { id: format === "computer" ? 367 : 368 },
@@ -405,7 +406,7 @@ test("observed null child IDs use public child discovery and confirm the real Oc
 
 test("null ID discovery still rejects missing, extra, duplicate, wrong-format or parent children", async () => {
   for (const children of [[], [activity(11), activity(12)], [activity(11), activity(11)],
-    [{ ...activity(11), name: "P-TCF CANADA - 4 modules" }], [activity(11, "", [])]]) {
+    [{ ...activity(11), name: "P-TCF CANADA - 4 modules" }], [activity(11, "", [11])]]) {
     replaceFetch(url => response(url.includes("/activities/list") ? acList([nullChildIds.parent])
       : acList(children, "sub_activities")));
     await assert.rejects(scrapeTorontoComputer, /incomplete|duplicate|unexpected children/);
@@ -460,7 +461,7 @@ test("complete child responses cannot bypass parent count, identity or uniquenes
   for (const change of [
     (data: any) => { data.body.sub_activities[1].id = 129704; },
     (data: any) => { data.body.sub_activities[1].id = 999999; },
-    (data: any) => { data.body.sub_activities[1].parent_activity = true; },
+    (data: any) => { Object.assign(data.body.sub_activities[1], { parent_activity: true, num_of_sub_activities: 1, sub_activity_ids: [] }); },
     (data: any) => { data.body.sub_activities[1].name = "P-TCF CANADA - 4 modules"; },
     (data: any) => { data.body.sub_activities.pop(); data.headers.page_info.total_records = 1; },
   ]) {
@@ -480,6 +481,106 @@ test("the child endpoint exception never skips advertised top-level search pages
   });
   await assert.rejects(scrapeTorontoComputer, /incomplete or duplicate/);
   assert.deepEqual(pages, [1, 2]);
+});
+
+test("observed nested Toronto groups resolve to the concrete Nov6 session without notifying either parent", async () => {
+  const detailIds: string[] = [];
+  const calls = replaceFetch((url, init) => {
+    if (url.includes("/activities/list")) return response(nestedGroups.listing);
+    const id = new URL(url).pathname.split("/").at(-1)!;
+    if (url.includes("/activities/subs/")) {
+      assert.ok(nestedGroups.children[id]);
+      assert.equal(JSON.parse(String(init?.body)).sub_activity_ids, id === "129466" ? "129467" : "");
+      return response(nestedGroups.children[id]);
+    }
+    detailIds.push(id);
+    assert.equal(id, "129591", "both navigation parents must be excluded even though their detail reports seats");
+    return response(nestedGroups.details[id]);
+  });
+  assert.deepEqual(await scrapeTorontoComputer(), [{
+    id: "129591", examType: "E-TCF Canada", date: "2026-11-06", availableSeats: 7,
+    bookingUrl: "https://anc.ca.apm.activecommunities.com/aftoronto/activity/search/detail/129591",
+  }]);
+  assert.deepEqual(detailIds, ["129591"]);
+  assert.equal(calls.mock.calls.length, 4);
+});
+
+test("nested child discovery still traverses every partial page and confirms only concrete leaves", async () => {
+  const pages: number[] = [];
+  replaceFetch((url, init) => {
+    if (url.includes("/activities/list")) return response(acList([activity(10, "On hold", [11])]));
+    if (url.includes("/subs/10?")) return response(acList([
+      { ...activity(11, "", []), num_of_sub_activities: 2, sub_activity_ids: null },
+    ], "sub_activities"));
+    if (url.includes("/subs/11?")) {
+      const page = JSON.parse(new Headers(init?.headers).get("page_info")!).page_number;
+      pages.push(page);
+      return response(acList([activity(11 + page, page === 1 ? "Full" : "")], "sub_activities", page, 2, 2));
+    }
+    assert.match(url, /\/detail\/13\?/);
+    return response(detail(13, "2 openings", "2026-11-06"));
+  });
+  assert.deepEqual((await scrapeTorontoComputer()).map(slot => [slot.id, slot.availableSeats]), [["13", 2]]);
+  assert.deepEqual(pages, [1, 2]);
+});
+
+test("nested cycles, cross-branch reuse and incomplete descendants fail the entire computer source", async () => {
+  const scenarios = [
+    { top: [activity(10, "", [11])], children: { 10: [activity(11, "", [10])], 11: [activity(10, "", [11])] } },
+    { top: [activity(10, "", [11, 12])], children: { 10: [activity(11, "", [13]), activity(12, "", [13])], 11: [activity(13)], 12: [activity(13)] } },
+    { top: [activity(10, "", [11])], children: { 10: [activity(11, "", [12])], 11: [] } },
+    { top: [activity(10, "", [11])], children: { 10: [activity(11, "", [12])], 11: [activity(13)] } },
+    { top: [activity(10, "", [11])], children: { 10: [activity(11, "", [12])], 11: [{ ...activity(12), name: "P-TCF CANADA" }] } },
+  ];
+  for (const scenario of scenarios) {
+    replaceFetch(url => {
+      if (url.includes("/activities/list")) return response(acList(scenario.top));
+      assert.ok(url.includes("/activities/subs/"), "unknown discovery must fail before any detail or result");
+      const id = Number(new URL(url).pathname.split("/").at(-1));
+      return response(acList((scenario.children as Record<number, ReturnType<typeof activity>[]>)[id], "sub_activities"));
+    });
+    await assert.rejects(scrapeTorontoComputer, /cyclic|duplicate|incomplete|unexpected/);
+  }
+});
+
+test("deep or oversized Toronto hierarchies fail within a bounded request budget", async () => {
+  let requests = 0;
+  replaceFetch(url => {
+    requests++;
+    if (url.includes("/activities/list")) return response(acList([activity(10, "", [11])]));
+    const id = Number(new URL(url).pathname.split("/").at(-1));
+    return response(acList([activity(id + 1, "", [id + 2])], "sub_activities"));
+  });
+  await assert.rejects(scrapeTorontoComputer, /bounded traversal/);
+  assert.ok(requests <= 10, "an unending parent chain cannot consume unbounded requests");
+  replaceFetch(() => response(acList(Array.from({ length: 501 }, (_, i) => activity(1000 + i, "", [])))));
+  await assert.rejects(scrapeTorontoComputer, /bounded traversal/);
+});
+
+test("an empty nested navigation group is not availability even with positive aggregate seats", async () => {
+  const calls = replaceFetch(url => response(url.includes("/activities/list")
+    ? acList([activity(10, "", [11])]) : acList([activity(11, "", [])], "sub_activities")));
+  assert.deepEqual(await scrapeTorontoComputer(), []);
+  assert.equal(calls.mock.calls.length, 2, "navigation groups must never be sent to detail confirmation");
+});
+
+test("failed nested discovery or parent detail preserves existing state and keeps immediate failure", async () => {
+  const source = createSources().find(source => source.key === "toronto" && source.source === "computer")!;
+  const fail = async () => assert.fail("failed nested coverage must not read/write state or notify");
+  for (const mode of ["http", "parent-detail"]) {
+    replaceFetch(url => {
+      if (url.includes("/activities/list")) return response(nestedGroups.listing);
+      const id = new URL(url).pathname.split("/").at(-1)!;
+      if (url.includes("/subs/")) {
+        if (mode === "http" && id === "129467") return response({}, 403);
+        return response(nestedGroups.children[id]);
+      }
+      return response(detail(129591, "7 openings remaining", "2026-11-06", true));
+    });
+    await assert.rejects(runMonitor([source], false, {
+      getPrevState: fail, upsertState: fail, notifyDiscord: fail, runRegistrationReminders: fail,
+    }), /computer \(scrape\)/);
+  }
 });
 
 test("a parent with no children and a positive aggregate space count is never a candidate", async () => {
@@ -518,9 +619,9 @@ test("malformed advertised child counts, IDs and hierarchy metadata fail the sou
   }
 });
 
-test("missing, duplicate, wrong-format or nested children invalidate the entire computer snapshot", async () => {
+test("missing, duplicate, wrong-format or cyclic children invalidate the entire computer snapshot", async () => {
   for (const children of [[], [activity(12)], [activity(11), activity(11)],
-    [{ ...activity(11), name: "P-TCF CANADA - 4 modules" }], [activity(11, "", [])]]) {
+    [{ ...activity(11), name: "P-TCF CANADA - 4 modules" }], [activity(11, "", [11])]]) {
     replaceFetch(url => response(url.includes("/activities/list") ? acList([activity(10, "On hold", [11])])
       : acList(children, "sub_activities")));
     await assert.rejects(scrapeTorontoComputer, /incomplete|duplicate|unexpected children/);

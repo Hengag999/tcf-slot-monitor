@@ -11,7 +11,7 @@
 
 ## Current behavior
 
-- `scrapeTorontoComputer()` reads every page of AC category 30, separating E-TCF from P-TCF. Every E-TCF parent is traversed regardless of its own status. The public frontend's `activities/subs/{parentId}` call receives its advertised child IDs with `open_spots=0`. If the source explicitly supplies `sub_activity_ids: null`, it sends an empty ID string, as the public frontend does, and verifies the returned children against the advertised count. Supplied ID lists must match exactly; an empty array with a positive count and missing/undefined metadata remain invalid. Child counts, formats, metadata, page counts, and uniqueness must all agree. Empty parents contribute no candidates. Incomplete traversal, nested/unexpected children, and failed requests invalidate the whole computer snapshot.
+- `scrapeTorontoComputer()` reads every page of AC category 30, separating E-TCF from P-TCF. Every E-TCF parent is traversed regardless of its own status, including nested navigation groups. The public frontend's `activities/subs/{parentId}` call receives its advertised child IDs with `open_spots=0`. If the source explicitly supplies `sub_activity_ids: null`, it sends an empty ID string, as the public frontend does, and verifies the returned children against the advertised count. Supplied ID lists must match exactly; an empty array with a positive count and missing/undefined metadata remain invalid. Child counts, formats, metadata, page counts, and uniqueness must all agree at every level. Empty parents contribute no candidates. A snapshot-wide visited set rejects cycles and cross-branch reuse; depth is bounded to 8 and total activities to 500. Incomplete traversal, unexpected children and failed requests invalidate the whole computer snapshot. Only concrete leaves reach detail confirmation.
 - `scrapeTorontoPaper()` independently reads CM category 368 with the public site's filters and 300-row limit. The response must explicitly report page 1, the requested limit, and a total equal to the returned count, below 300. Missing/invalid metadata, duplicate IDs, wrong categories/formats, and records contradicting the requested status/open-space filters fail instead of becoming an empty snapshot. Paper discovery cannot be replaced with AC search because its hidden records are not covered there.
 - Explicitly closed computer child rows are not candidates. Every remaining computer candidate and every CM paper candidate must have a matching AC detail ID, explicit `is_parent_activity=false`, and readable `space_status`. Unexpected parent detail fails the source rather than producing a false alert. At most five detail requests run concurrently. Dates prefer detail `first_date`, falling back to the validated concrete AC activity number or CM sitting date. Reported seat counts come from confirmed AC detail.
 - The orchestrator calls these independently and restricts each snapshot to its own exam type. A failed paper source must preserve its previous row and must not prevent computer monitoring. Returning an unscoped partial Toronto array would be unsafe: missing exam types would otherwise be cleared by the orchestrator.
@@ -85,6 +85,17 @@ A reminder for these releases would be useful independently of cancellation-seat
 - No database writes, Discord messages, commits, or deployment were performed by this Toronto change.
 
 ## Historical incidents
+
+### November 4, 2026 — nested navigation group
+
+The centre changed child 129467 of parent 129466 into another parent. Its own
+child discovery now yields concrete session 129591 (November 6). Both nested
+parent and leaf details reported seven openings, but only the leaf had
+`is_parent_activity=false`; the UI exposed it after two group expansions.
+Added bounded recursive discovery with count/ID/pagination checks at every
+level, global cycle/duplicate rejection and unchanged concrete detail checks.
+All 231 tests, typecheck and a public-only repaired scrape passed. See the
+[incident and deployment evidence](../health-assessment-2026-11-04.md).
 
 ### 2026-10-07 — intermittent paper HTTP 202 during timer verification
 
