@@ -7,7 +7,7 @@
 | **Page(s)** | API: `api.gblc.ca/candidates/test-schedules/?test_id=6&has_available_seats=true` · booking: `gblc.ca/en/book-now/choose-date` |
 | **Discord** | #northyork |
 | **DB key** | city=`northyork`, exam_type=`TCF Canada - Computer` or `TCF Canada - Paper` |
-| **Status** | Both formats verified; November 3 DNS fallback shipped with 225 tests, three healthy automatic North York cycles and a successful public-only fallback probe on GitHub |
+| **Status** | November 4 request-reset repair verified through 19:30 China time: six real connection failures recovered within the existing retry budget; final three runs passed all 12 sources, 235 tests/typecheck and the scoped guard. Fresh read-only state confirmed both formats. Temporary follow-up deleted; GitHub provider delays remain a documented limitation. |
 
 ## How it works
 - `scrapeNorthYork()` GETs the official booking site's public schedule API for
@@ -83,6 +83,17 @@
   sources with 153 schedules. The 17:30 run passed without retry; read-only
   state was fresh with unchanged notification timestamps. This is observed
   recovery of one real reset, not proof of permanent upstream repair.
+
+  **19:33 completion:** the 16:15–19:30 watch observed two recovered resets,
+  three recovered refusals and one recovered timeout. Final automatic runs
+  `41820074732`, `41820707277` and `41821395435` passed all 12 sources, 235 tests,
+  typecheck and the scoped guard; all 14 state rows refreshed in the last cycle.
+  Both format counts and notification timestamps were preserved. The temporary
+  local follow-up was deleted at its deadline. During GitHub Actions degradation,
+  workflow creation had gaps and the 18:10 run
+  remained queued, although the final three cycles returned to five-minute
+  creation intervals. Dispatch receipts were not available to establish the
+  cause of each gap. See the network incident record for exact evidence and limits.
 
 - **2026-11-03 (connection resilience)** — All 19 failed logs in a 100-run window
   were inspected: 18 were North York connection refusals/timeouts, interspersed
