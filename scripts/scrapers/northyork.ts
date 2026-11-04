@@ -87,6 +87,31 @@ function connectionFailureCode(error: unknown): string | undefined {
   return code === "ECONNREFUSED" || code === "UND_ERR_CONNECT_TIMEOUT" ? code : undefined;
 }
 
+// Preserve actionable fixed codes for ineligible failures without printing raw
+// exception messages, addresses, URLs, credentials or arbitrary nested values.
+function transportSummary(error: unknown): string {
+  const allowedNames = new Set(["Error", "TypeError", "AggregateError", "AbortError", "TimeoutError"]);
+  const allowedCodes = new Set(["ECONNREFUSED", "UND_ERR_CONNECT_TIMEOUT", "ECONNRESET", "ETIMEDOUT",
+    "EAI_AGAIN", "ENOTFOUND", "ABORT_ERR", "UND_ERR_SOCKET", "UND_ERR_HEADERS_TIMEOUT", "UND_ERR_BODY_TIMEOUT",
+    "CERT_HAS_EXPIRED", "ERR_TLS_CERT_ALTNAME_INVALID", "DEPTH_ZERO_SELF_SIGNED_CERT", "UNABLE_TO_VERIFY_LEAF_SIGNATURE"]);
+  const names = new Set<string>();
+  const codes = new Set<string>();
+  const seen = new Set<Error>();
+  const visit = (value: unknown): void => {
+    if (!(value instanceof Error) || seen.has(value) || seen.size >= 16) return;
+    seen.add(value);
+    try {
+      if (allowedNames.has(value.name)) names.add(value.name);
+      const code = (value as NodeJS.ErrnoException).code;
+      if (code && allowedCodes.has(code)) codes.add(code);
+      visit(value.cause);
+      if (value instanceof AggregateError && Array.isArray(value.errors)) value.errors.slice(0, 8).forEach(visit);
+    } catch { /* Unknown/unreadable fields remain unclassified, never raw diagnostics. */ }
+  };
+  visit(error);
+  return `errorNames=${[...names].sort().join("|") || "unknown"}; codes=${[...codes].sort().join("|") || "unknown"}`;
+}
+
 export async function scrapeNorthYork(options: {
   fetchImpl?: typeof fetch;
   publicDnsFetchImpl?: (signal: AbortSignal) => Promise<NorthYorkApiResponse>;
@@ -104,7 +129,7 @@ export async function scrapeNorthYork(options: {
       break;
     } catch (error) {
       const code = connectionFailureCode(error);
-      if (!code) throw new Error("GBLC: schedule request failed (non-retryable transport error)");
+      if (!code) throw new Error(`GBLC: schedule request failed (non-retryable transport error; ${transportSummary(error)})`);
       if (attempt === 3) throw new Error(`GBLC: schedule connection failed after 3 attempts (code=${code})`);
       console.warn(`[northyork] schedule connection ${code}; retry ${attempt}/2 via isolated public DNS`);
       await sleep(attempt * 1000);

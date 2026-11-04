@@ -159,6 +159,29 @@ test("North York connection recovery still requires complete valid inventory and
   }
 });
 
+test("North York unknown failures log only fixed names/codes while keeping immediate failure", async () => {
+  const secret = "private-url-and-credential-must-not-be-logged";
+  for (const failure of [
+    new TypeError(secret, { cause: Object.assign(new Error(secret), { code: "ECONNRESET" }) }),
+    new AggregateError([connectionError("ECONNREFUSED"), connectionError("UND_ERR_CONNECT_TIMEOUT")], secret),
+    Object.assign(new Error(secret), { name: secret, code: secret, cause: { message: secret } }),
+  ]) {
+    const io = requestSequence([failure]);
+    await assert.rejects(scrapeNorthYork(io), error => {
+      const message = (error as Error).message;
+      assert.match(message, /non-retryable transport error; errorNames=/);
+      assert.ok(!message.includes(secret));
+      assert.equal((error as Error).cause, undefined);
+      if (failure instanceof AggregateError) assert.match(message, /codes=ECONNREFUSED\|UND_ERR_CONNECT_TIMEOUT/);
+      else if (failure instanceof TypeError) assert.match(message, /codes=ECONNRESET/);
+      else assert.match(message, /errorNames=unknown; codes=unknown/);
+      return true;
+    });
+    assert.equal(io.calls(), 1);
+    assert.deepEqual(io.sleeps, []);
+  }
+});
+
 test("configured North York source sends only new Paper dates and deduplicates each format independently", async (t) => {
   t.mock.method(globalThis, "fetch", fakeFetch(fixture));
   const city = createSources().find(source => source.key === "northyork")!;

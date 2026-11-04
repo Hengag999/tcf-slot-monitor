@@ -73,3 +73,40 @@ A public-source-only repaired computer check traversed four top-level rows,
 found two concrete sessions, and returned only **129591, November 6, 7 openings**.
 No local live pipeline, production state write or Discord send was performed.
 Deployment, actual delivery and normal automatic-run evidence remain pending.
+
+## First automatic recovery and actual Discord delivery
+
+Commit `a351034` shipped the hierarchy repair. Normal run
+[41776072487](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/41776072487),
+created **12:55:15 China time**, passed **231 tests**, typecheck, the scoped
+database guard with **zero forbidden privileges**, and **all 12 real sources**.
+Computer discovery found two concrete sessions, with only November 6 available.
+The pipeline accepted one Discord notification before persisting its snapshot.
+
+The actual existing Toronto-channel message was independently read in Ego:
+[1567401907494846625](https://discord.com/channels/1484038585907810535/1484040090144608346/1567401907494846625),
+timestamp `2026-11-04T04:55:35.666Z`. It contains one `@everyone`, November 6,
+seven seats and the booking link for **129591**, with neither parent advertised.
+No synthetic message or manual production dispatch was used. Subsequent-cycle
+deduplication and final read-only state evidence remain pending.
+
+## Earlier intervening failures and diagnostic limit
+
+All six failed runs between yesterday's final verification and the sustained
+Toronto streak were also inspected. Three (`41661067372`, `41661951459`,
+`41662820639`) already showed the same Toronto hierarchy failure intermittently.
+Four (`41657629868`, `41662820639`, `41667980340`, `41669641285`; one overlaps)
+failed North York with only `non-retryable transport error`. Those logs omit the
+underlying code, so they do **not** establish a repeat of the earlier refused-DNS
+connection or a reason to expand retry/grace eligibility. The latest North York
+scrapes and persistence succeeded (152 Computer + 2 Paper at the initial state
+check).
+
+Added bounded, allowlisted transport-name/code diagnostics for these ineligible
+North York exceptions, including nested native causes/aggregates. Raw messages,
+addresses, URLs and arbitrary values remain suppressed. This is diagnostic
+coverage, **not a demonstrated repair of those four unknown failures**. They
+continue to fail immediately without retries or grace. The existing eligible
+connection fallback is unchanged. A regression verifies both safe logging and
+unchanged immediate failure. The current complete suite is **232 passing tests**,
+with typecheck passing.

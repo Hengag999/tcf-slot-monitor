@@ -43,6 +43,12 @@
 - **Future API changes fail visibly.** A paginated envelope is not guessed or
   silently flattened; investigate the booking site's new complete-fetch contract
   before changing the parser.
+- **Unknown transport failures remain immediate.** November 4 diagnostics log
+  only allowlisted native names/codes from a bounded error tree, never raw
+  messages, addresses or URLs. Four earlier failures lacked this classification
+  and recovered; their cause is not established. No broader retry/grace policy
+  was inferred from the generic error. See the
+  [November 4 incident record](../health-assessment-2026-11-04.md).
 - **Intermittent connection establishment failures:** only observed
   `ECONNREFUSED` and `UND_ERR_CONNECT_TIMEOUT` receive up to three GET attempts,
   with 1s/2s backoff and a fresh 30s deadline. The first request uses normal DNS;
