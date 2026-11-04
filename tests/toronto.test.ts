@@ -641,6 +641,24 @@ test("truncated or unstable pagination cannot return a successful empty result",
   }
 });
 
+test("invalid Toronto list envelopes expose only bounded structural diagnostics", async () => {
+  const secret = "arbitrary-response-text-must-not-leak";
+  for (const data of [
+    { headers: { response_code: secret, page_info: { page_number: secret, total_page: -1, total_records: secret } }, body: { activity_items: secret } },
+    { headers: { response_code: "0007", page_info: { page_number: 1, total_page: 1, total_records: 0 } }, body: { activity_items: [] } },
+  ]) {
+    const calls = replaceFetch(() => response(data));
+    await assert.rejects(scrapeTorontoComputer, error => {
+      const message = (error as Error).message;
+      assert.match(message, /invalid response or pagination/);
+      assert.ok(!message.includes(secret));
+      assert.match(message, /responseCode=(?:invalid|0007), itemCount=(?:invalid|0), pageNumber=/);
+      return true;
+    });
+    assert.equal(calls.mock.calls.length, 1, "unknown JSON envelopes must not trigger retries or become empty state");
+  }
+});
+
 test("paper rows in category30 are not relabeled as computer, while unfamiliar products fail", async () => {
   replaceFetch(() => response(acList([{ ...activity(), name: "P-TCF CANADA - 4 modules" }])));
   assert.deepEqual(await scrapeTorontoComputer(), []);

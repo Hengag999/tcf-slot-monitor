@@ -126,7 +126,7 @@ test("North York exhaustion fails the workflow without reading or overwriting ei
 
 test("North York never retries HTTP responses, unknown transport errors, TLS, DNS or response-body failures", async () => {
   const failures = [new Error("unknown"), connectionError("ENOTFOUND"), connectionError("CERT_HAS_EXPIRED"),
-    connectionError("ECONNRESET"), new AggregateError([connectionError("ECONNREFUSED"), new Error("unknown")]),
+    connectionError("UND_ERR_SOCKET"), new AggregateError([connectionError("ECONNREFUSED"), new Error("unknown")]),
     new TypeError("unknown wrapper", { cause: new Error("unknown") })];
   for (const failure of failures) {
     const io = requestSequence([failure]);
@@ -162,7 +162,7 @@ test("North York connection recovery still requires complete valid inventory and
 test("North York unknown failures log only fixed names/codes while keeping immediate failure", async () => {
   const secret = "private-url-and-credential-must-not-be-logged";
   for (const failure of [
-    new TypeError(secret, { cause: Object.assign(new Error(secret), { code: "ECONNRESET" }) }),
+    new TypeError(secret, { cause: Object.assign(new Error(secret), { code: "ENOTFOUND" }) }),
     new AggregateError([connectionError("ECONNREFUSED"), connectionError("UND_ERR_CONNECT_TIMEOUT")], secret),
     Object.assign(new Error(secret), { name: secret, code: secret, cause: { message: secret } }),
   ]) {
@@ -173,12 +173,28 @@ test("North York unknown failures log only fixed names/codes while keeping immed
       assert.ok(!message.includes(secret));
       assert.equal((error as Error).cause, undefined);
       if (failure instanceof AggregateError) assert.match(message, /codes=ECONNREFUSED\|UND_ERR_CONNECT_TIMEOUT/);
-      else if (failure instanceof TypeError) assert.match(message, /codes=ECONNRESET/);
+      else if (failure instanceof TypeError) assert.match(message, /codes=ENOTFOUND/);
       else assert.match(message, /errorNames=unknown; codes=unknown/);
       return true;
     });
     assert.equal(io.calls(), 1);
     assert.deepEqual(io.sleeps, []);
+  }
+});
+
+test("observed North York request resets recover within three attempts without bypassing HTTP or inventory checks", async () => {
+  const recovered = requestSequence([connectionError("ECONNRESET"), new Response(JSON.stringify(fixture))]);
+  assert.deepEqual(await scrapeNorthYork(recovered), parseNorthYorkSchedules(fixture));
+  assert.equal(recovered.calls(), 2);
+  assert.deepEqual(recovered.sleeps, [1000]);
+  const exhausted = requestSequence(Array.from({ length: 3 }, () => connectionError("ECONNRESET")));
+  await assert.rejects(scrapeNorthYork(exhausted), /failed after 3 attempts \(code=ECONNRESET\)/);
+  assert.equal(exhausted.calls(), 3);
+  assert.deepEqual(exhausted.sleeps, [1000, 2000]);
+  for (const final of [new Response("blocked", { status: 403 }), new Response('{"results":[]}')]) {
+    const io = requestSequence([connectionError("ECONNRESET"), final]);
+    await assert.rejects(scrapeNorthYork(io));
+    assert.equal(io.calls(), 2);
   }
 });
 

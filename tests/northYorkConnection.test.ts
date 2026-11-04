@@ -110,3 +110,19 @@ test("North York switches to public DNS only after an approved connection failur
     else await assert.rejects(scrapeNorthYork(options), /403/);
   }
 });
+
+test("a North York reset after response headers remains a non-retryable body failure", async () => {
+  const io = httpsHarness(200, response => {
+    response.destroy(Object.assign(new Error("private body error"), { code: "ECONNRESET" }));
+  });
+  let initial = 0;
+  await assert.rejects(scrapeNorthYork({
+    fetchImpl: (async () => { initial++; throw new TypeError("fetch failed", {
+      cause: Object.assign(new Error("private reset"), { code: "ECONNRESET" }),
+    }); }) as typeof fetch,
+    sleep: async () => {},
+    publicDnsFetchImpl: signal => fetchNorthYorkViaPublicDns(signal, io),
+  }), /non-retryable transport error/);
+  assert.equal(initial, 1);
+  assert.equal(io.calls(), 1, "an interrupted response must never replay the body as a connection retry");
+});

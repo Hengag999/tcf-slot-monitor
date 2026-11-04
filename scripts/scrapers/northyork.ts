@@ -76,7 +76,7 @@ export function parseNorthYorkSchedules(data: unknown): Slot[] {
   }));
 }
 
-// Only the two connection-establishment failures observed in CI are retried.
+// Only the three request-transport failures observed in CI are retried.
 // HTTP, TLS, DNS, body-read and inventory failures retain immediate failure.
 function connectionFailureCode(error: unknown): string | undefined {
   if (!(error instanceof Error)) return undefined;
@@ -84,7 +84,7 @@ function connectionFailureCode(error: unknown): string | undefined {
     ? error.cause : error;
   if (leaf.cause !== undefined || leaf instanceof AggregateError) return undefined;
   const code = (leaf as NodeJS.ErrnoException).code;
-  return code === "ECONNREFUSED" || code === "UND_ERR_CONNECT_TIMEOUT" ? code : undefined;
+  return code === "ECONNREFUSED" || code === "UND_ERR_CONNECT_TIMEOUT" || code === "ECONNRESET" ? code : undefined;
 }
 
 // Preserve actionable fixed codes for ineligible failures without printing raw

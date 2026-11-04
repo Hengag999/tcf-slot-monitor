@@ -49,8 +49,13 @@
   and recovered; their cause is not established. No broader retry/grace policy
   was inferred from the generic error. See the
   [November 4 incident record](../health-assessment-2026-11-04.md).
-- **Intermittent connection establishment failures:** only observed
-  `ECONNREFUSED` and `UND_ERR_CONNECT_TIMEOUT` receive up to three GET attempts,
+  Later observed request resets receive bounded within-run retries; errors
+  after response headers remain non-retryable body failures. This does not add
+  grace or suppress exhausted failures. See the
+  [afternoon network incident](../health-assessment-2026-11-04-network.md).
+- **Intermittent request-transport failures:** only observed
+  `ECONNREFUSED`, `UND_ERR_CONNECT_TIMEOUT` and request-stage `ECONNRESET`
+  receive up to three GET attempts,
   with 1s/2s backoff and a fresh 30s deadline. The first request uses normal DNS;
   subsequent attempts use a request-local Google resolver for this API hostname
   with normal HTTPS certificate/SNI verification. No API IP is pinned and no

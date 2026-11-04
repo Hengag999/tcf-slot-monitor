@@ -259,6 +259,15 @@ function validateAcItems(items: unknown[], label: string): AcItem[] {
   return items as AcItem[];
 }
 
+function acResponseDiagnostics(json: any, field: string): string {
+  const info = json?.headers?.page_info;
+  const count = (value: unknown) => Number.isSafeInteger(value) && (value as number) >= 0 && (value as number) <= 1_000_000 ? value : "invalid";
+  const code = json?.headers?.response_code;
+  return `responseCode=${typeof code === "string" && /^\d{4}$/.test(code) ? code : "invalid"}, `
+    + `itemCount=${Array.isArray(json?.body?.[field]) ? count(json.body[field].length) : "invalid"}, `
+    + `pageNumber=${count(info?.page_number)}, totalPages=${count(info?.total_page)}, totalRecords=${count(info?.total_records)}`;
+}
+
 async function fetchAcPages(path: string, body: unknown, field: "activity_items" | "sub_activities", label: string): Promise<AcItem[]> {
   const out: AcItem[] = [];
   let totalPages = 1;
@@ -277,7 +286,7 @@ async function fetchAcPages(path: string, body: unknown, field: "activity_items"
     if (json?.headers?.response_code !== "0000" || !Array.isArray(items)
       || !Number.isInteger(info?.total_page) || info.total_page < 1 || info.total_page > 50
       || !Number.isInteger(info.total_records) || info.total_records < 0 || info.page_number !== page) {
-      throw new Error(`${label} page ${page}: invalid response or pagination; availability unknown`);
+      throw new Error(`${label} page ${page}: invalid response or pagination; availability unknown; ${acResponseDiagnostics(json, field)}`);
     }
     if (page > 1 && (info.total_page !== totalPages || info.total_records !== totalRecords)) {
       throw new Error(`${label}: listing changed during pagination; availability unknown`);

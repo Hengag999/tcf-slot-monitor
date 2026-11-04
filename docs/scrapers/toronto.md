@@ -38,6 +38,12 @@
   not. Both eligible failure kinds share one outage clock and remain visibly
   degraded. See the [October 12 incident record](../health-assessment-2026-10-12.md).
 - Missing list arrays, unsuccessful AC response envelopes, malformed rows, truncated/duplicate discovery, failed detail calls, missing detail status/parent metadata, and unknown status text are **unknown availability**, not a known-empty result. They fail that exam type so persistence can retain its previous state.
+- Invalid AC envelopes log only fixed structural metadata (four-digit response
+  code, array count, bounded pagination numbers), never raw response text.
+  November 4 network failures recovered between normal runs; neither bounded
+  metadata nor green runs establish their upstream cause. The computer source
+  still fails after exhausted transport retries or an unknown envelope. See the
+  [afternoon network incident](../health-assessment-2026-11-04-network.md).
 - Explicit closed statuses include full, on hold, closed, cancelled, waitlist, sold out, and not open. Positive detail handling accepts numeric openings/spaces/spots/seats, `Open`, `Available`, and `Unlimited openings`. New wording fails visibly rather than assuming a vacancy. `Unlimited openings` was observed on public non-exam AC activities in this assessment; an actual open E-TCF sitting was not available for end-to-end confirmation.
 
 ## Entry-point reconnaissance — 2026-10-06

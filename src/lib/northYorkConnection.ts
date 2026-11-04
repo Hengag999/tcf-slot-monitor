@@ -31,6 +31,7 @@ export function fetchNorthYorkViaPublicDns(signal: AbortSignal, options: {
   resolve4?: (hostname: string) => Promise<string[]>;
 } = {}): Promise<NorthYorkApiResponse> {
   return new Promise((resolve, reject) => {
+    let receivedResponse = false;
     const req = (options.requestImpl ?? request)(NORTH_YORK_API_URL, {
       method: "GET",
       lookup: northYorkLookup(options.resolve4),
@@ -40,7 +41,10 @@ export function fetchNorthYorkViaPublicDns(signal: AbortSignal, options: {
       rejectUnauthorized: true,
       headers: { Accept: "application/json" },
     }, response => {
-      response.on("error", reject);
+      receivedResponse = true;
+      // A reset after headers is a body failure, not an eligible connection
+      // retry. Do not expose its transport code to the request retry classifier.
+      response.on("error", () => reject(new Error("GBLC: API response body failed")));
       response.on("aborted", () => reject(new Error("GBLC: incomplete API response")));
       const status = response.statusCode ?? 0;
       const ok = status >= 200 && status < 300;
@@ -66,7 +70,7 @@ export function fetchNorthYorkViaPublicDns(signal: AbortSignal, options: {
         resolve({ ok, status, json: async () => JSON.parse(Buffer.concat(chunks).toString("utf8")) });
       });
     });
-    req.on("error", reject);
+    req.on("error", error => reject(receivedResponse ? new Error("GBLC: API response body failed") : error));
     req.end();
   });
 }
