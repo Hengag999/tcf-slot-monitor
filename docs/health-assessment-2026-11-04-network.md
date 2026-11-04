@@ -85,3 +85,26 @@ Toronto paper and Halifax/Ottawa health records had current successes and clear
 incident markers. Normal creation cadence across these three runs was five
 minutes. The longer quiet watch remains active; these checks are not a promise
 of permanent upstream network recovery.
+
+## First real request-reset recovery — 17:25 China time
+
+Automatic run [41807342658](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/41807342658),
+created **17:25:15 China time** on `eb85e63`, encountered North York request-stage
+`ECONNRESET`. Its existing bounded retry switched to the isolated DNS/HTTPS
+client once, returned **153 valid schedules (151 Computer + 2 Paper)** and
+completed with **all 12 sources OK**. The run passed 235 tests, typecheck and
+the scoped guard with zero forbidden privileges. This is the first observed
+real automatic production scrape exercising the new reset-recovery branch;
+it is distinct from the earlier offline cases and public-only fallback probe.
+
+The following 17:30 run
+[41808029493](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/41808029493)
+also passed all 12 sources with no retry. A scoped read-only check at
+**17:33:45.102 China time** confirmed all 14 availability/reminder rows refreshed
+in that cycle; North York retained 151 Computer + 2 Paper and unchanged
+notification timestamps. Toronto's known paper challenge at 17:20 had recovered,
+and all three existing health records had cleared incident markers. No failure
+was suppressed by the North York recovery: the request completed successfully
+within its retry budget. This verifies that one real reset recovered; it does
+not establish a permanent repair of upstream networking. The quiet watch
+continues to its scheduled deadline.

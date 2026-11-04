@@ -78,6 +78,12 @@
   follow-up continues until about 19:30 China time. See the
   [network incident record](../health-assessment-2026-11-04-network.md).
 
+  **17:25 follow-up:** real automatic run `41807342658` encountered
+  `ECONNRESET`, recovered on its first isolated-DNS retry and passed all 12
+  sources with 153 schedules. The 17:30 run passed without retry; read-only
+  state was fresh with unchanged notification timestamps. This is observed
+  recovery of one real reset, not proof of permanent upstream repair.
+
 - **2026-11-03 (connection resilience)** — All 19 failed logs in a 100-run window
   were inspected: 18 were North York connection refusals/timeouts, interspersed
   with successful checks; one other run affected several Oncord sources and later
