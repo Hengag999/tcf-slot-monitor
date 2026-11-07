@@ -9,6 +9,7 @@ import { scrapeWinnipeg, WINNIPEG_PAGE } from "./scrapers/winnipeg";
 import { scrapeMontrealAf } from "./scrapers/montrealAf";
 import { scrapeMontrealMarieVictorin } from "./scrapers/montrealMarieVictorin";
 import { scrapeMontrealElc, ELC_EXAM_TYPE } from "./scrapers/montrealElc";
+import { scrapeMontrealStanislas } from "./scrapers/montrealStanislas";
 import { scrapeMontrealUqam } from "./scrapers/montrealUqam";
 import { scrapeMontrealYvesTheriault } from "./scrapers/montrealYvesTheriault";
 import { scrapeVictoria } from "./scrapers/victoria";
@@ -91,6 +92,10 @@ export function createSources(): CityConfig[] {
   {
     key: "montreal-elc", label: "蒙特利尔 · Collège ELC", scrape: scrapeMontrealElc,
     examTypes: [ELC_EXAM_TYPE], webhookEnv: "DISCORD_WEBHOOK_MONTREAL_ELC", diffByDate: true,
+  },
+  {
+    key: "montreal-stanislas", label: "蒙特利尔 · Collège Stanislas", scrape: scrapeMontrealStanislas,
+    examTypes: ["TCF Canada"], webhookEnv: "DISCORD_WEBHOOK_MONTREAL_STANISLAS", diffByDate: true,
   },
   {
     key: "montreal-uqam", label: "蒙特利尔 · UQAM", scrape: scrapeMontrealUqam,
