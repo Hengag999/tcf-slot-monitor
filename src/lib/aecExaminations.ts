@@ -20,6 +20,8 @@ export interface AecSource {
   label: string;
   baseUrl: string;
   branchId: number;
+  // The Montréal widget requests group 0 but returns sittings at branch 1.
+  listingBranchId?: number;
   examTypes: AecExamType[];
   bookingOrigins: string[];
   // Opt in only where observed server failures justify bounded GET retries.
@@ -66,7 +68,7 @@ export function parseAecExaminations(body: string, status: number, source: AecSo
   const slots: AecSlot[] = [];
   const ids = new Set<number>();
   for (const group of data) {
-    if (!object(group) || group.IDETABLISHMENT_BRANCH !== source.branchId || group.IDEXAMINATION_TYPE !== type.id || group.name !== type.name) {
+    if (!object(group) || group.IDETABLISHMENT_BRANCH !== (source.listingBranchId ?? source.branchId) || group.IDEXAMINATION_TYPE !== type.id || group.name !== type.name) {
       return fail("unexpected branch or examination type");
     }
     if (!Array.isArray(group.examinations)) return fail("missing examinations array");
@@ -127,7 +129,7 @@ export async function scrapeAecExaminations(
   if (!match) throw new Error(`${source.label}: APIKEY not found in page source`);
 
   const groups = await Promise.all(source.examTypes.map(async (type) => {
-    const url = `${source.baseUrl}/api/v1/public/examinations/list/${source.branchId}/${type.id}?allBranches=N&CURRENT_LANG=en_US`;
+    const url = `${source.baseUrl}/api/v1/public/examinations/list/${source.listingBranchId ?? source.branchId}/${type.id}?allBranches=N&CURRENT_LANG=en_US`;
     const attempts = source.retryServerErrors ? 3 : 1;
     let response!: Response;
     for (let attempt = 1; attempt <= attempts; attempt++) {

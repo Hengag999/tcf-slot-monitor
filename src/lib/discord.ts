@@ -12,17 +12,28 @@ export interface PublishedAvailabilityStyle {
   caveat: string;
 }
 
+export type NotificationStyle = PublishedAvailabilityStyle | { kind: "registration-open"; sourceUrl: string };
+
 export function formatSlotNotification(
   cityLabel: string,
   examType: string,
   slots: SlotInfo[],
-  style?: PublishedAvailabilityStyle,
+  style?: NotificationStyle,
 ): string {
+  if (style?.kind === "registration-open") {
+    return [
+      `@everyone 🗓️ **${cityLabel}** **${examType}** 官网日历标为开放报名`,
+      "", ...slots.map(s => `📅 ${s.date}`), "",
+      `🔎 考试日历：${style.sourceUrl}`,
+      ...[...new Set(slots.map(s => s.bookingUrl))].map(url => `📝 报名入口：${url}`),
+      "", "实际余位请在报名时确认。",
+    ].join("\n");
+  }
   const published = style?.kind === "published-availability";
   const publishedLabel = slots.some(slot => slot.availableSeats == null)
     ? "官网公布场次（余位未披露，请向考点确认）" : "官网公布余位";
   const slotLines = slots.map((s) => {
-    const time = s.startTime && s.endTime ? ` ${s.startTime}–${s.endTime}` : "";
+    const time = s.startTime ? ` ${s.startTime}${s.endTime ? `–${s.endTime}` : ""}` : "";
     const seats = s.availableSeats != null
       ? published ? ` · 官网公布 ${s.availableSeats} 个名额` : ` · 剩 ${s.availableSeats} 个名额`
       : "";
@@ -50,7 +61,7 @@ export async function notifyDiscord(
   cityLabel: string,
   examType: string,
   slots: SlotInfo[],
-  style?: PublishedAvailabilityStyle,
+  style?: NotificationStyle,
 ): Promise<void> {
   await postDiscord(webhookUrl, formatSlotNotification(cityLabel, examType, slots, style));
 }

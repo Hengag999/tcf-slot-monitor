@@ -6,11 +6,16 @@ import { scrapeOttawa } from "./scrapers/ottawa";
 import { scrapeAshton } from "./scrapers/ashton";
 import { scrapeNorthYork } from "./scrapers/northyork";
 import { scrapeWinnipeg, WINNIPEG_PAGE } from "./scrapers/winnipeg";
+import { scrapeMontrealAf } from "./scrapers/montrealAf";
+import { scrapeMontrealMarieVictorin } from "./scrapers/montrealMarieVictorin";
+import { scrapeMontrealElc, ELC_EXAM_TYPE } from "./scrapers/montrealElc";
+import { scrapeMontrealUqam } from "./scrapers/montrealUqam";
+import { scrapeMontrealYvesTheriault } from "./scrapers/montrealYvesTheriault";
 import { scrapeVictoria } from "./scrapers/victoria";
 import { bookableEdmontonSlots, scrapeEdmontonExams } from "./scrapers/edmonton";
 import { scrapeTcfListing, type ExamSelectorRow } from "../src/lib/examSelector";
 import { getPrevState, upsertState } from "../src/lib/db";
-import { notifyDiscord, type PublishedAvailabilityStyle } from "../src/lib/discord";
+import { notifyDiscord, type NotificationStyle } from "../src/lib/discord";
 import { runRegistrationReminders, type RegistrationExam, type ReminderOptions } from "../src/lib/registrationReminders";
 import { recordPaperChallenge, recordPaperSuccess } from "../src/lib/torontoPaperHealth";
 import { AecKeyPageOriginError } from "../src/lib/aecExaminations";
@@ -35,7 +40,7 @@ export interface CityConfig {
   label: string;
   scrape: () => Promise<MonitorSlot[]>;
   webhookEnv: string;
-  notificationStyle?: PublishedAvailabilityStyle;
+  notificationStyle?: NotificationStyle;
   // When true, notify per newly-appeared date instead of only on 0→N
   diffByDate?: boolean;
   // When true, the city runs the registration-reminder engine instead of the
@@ -74,6 +79,29 @@ export function createSources(): CityConfig[] {
       kind: "published-availability", sourceUrl: WINNIPEG_PAGE,
       caveat: "未注明年份的场次，请在报名时向考点确认。需提交报名表、付款并由考点确认，非即时锁位。",
     },
+  },
+  {
+    key: "montreal-af", label: "蒙特利尔 · Alliance Française", scrape: scrapeMontrealAf,
+    examTypes: ["TCF Canada"], webhookEnv: "DISCORD_WEBHOOK_MONTREAL_AF", diffByDate: true,
+  },
+  {
+    key: "montreal-marie-victorin", label: "蒙特利尔 · Cégep Marie-Victorin", scrape: scrapeMontrealMarieVictorin,
+    examTypes: ["TCF Canada"], webhookEnv: "DISCORD_WEBHOOK_MONTREAL_MARIE_VICTORIN", diffByDate: true,
+  },
+  {
+    key: "montreal-elc", label: "蒙特利尔 · Collège ELC", scrape: scrapeMontrealElc,
+    examTypes: [ELC_EXAM_TYPE], webhookEnv: "DISCORD_WEBHOOK_MONTREAL_ELC", diffByDate: true,
+  },
+  {
+    key: "montreal-uqam", label: "蒙特利尔 · UQAM", scrape: scrapeMontrealUqam,
+    examTypes: ["TCF Canada"], webhookEnv: "DISCORD_WEBHOOK_MONTREAL_UQAM", diffByDate: true,
+    notificationStyle: { kind: "registration-open", sourceUrl: "https://francisation.uqam.ca/tests-tcf/calendrier/" },
+  },
+  {
+    key: "montreal-yves-theriault", label: "Montréal · Centre Yves-Thériault", scrape: scrapeMontrealYvesTheriault,
+    webhookEnv: "DISCORD_WEBHOOK_MONTREAL_YVES_THERIAULT", reminderMode: true,
+    zhLabel: "蒙特利尔 · Centre Yves-Thériault（现场报名）",
+    reminderOptions: { futureOnly: true, timeZone: "America/Toronto", timeZoneLabel: "蒙特利尔时间" },
   },
   ];
 }
@@ -114,7 +142,7 @@ export async function processCity(
     return;
   }
 
-  const resultLabel = city.notificationStyle?.kind === "published-availability" ? "published exam date(s)" : "available slot(s)";
+  const resultLabel = city.notificationStyle ? "published exam date(s)" : "available slot(s)";
   console.log(`[${city.key}] ${allSlots.length} ${resultLabel}`);
 
   const groups = groupByExamType(allSlots);
