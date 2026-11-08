@@ -84,6 +84,37 @@ function isAnnouncementOnly(rest: string): boolean {
   return true;
 }
 
+function isSoldOutNotice(rest: string, registrationLink: string): boolean {
+  // The November 8 card replaces the date list with a complete sold-out
+  // notice. A separate, explicitly titled card contains registration advice,
+  // not availability. Do not let partial/unknown text clear the saved state.
+  const information = [...rest.matchAll(/<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]\s*>/gi)]
+    .filter(heading => /^Important Information After Completing Your Registration and Payment$/i.test(text(heading[1])));
+  if (information.length > 1) return false;
+  if (information.length) {
+    // Validate the entire advice suffix too: an extra session card or changed
+    // availability after this heading must not be silently discarded.
+    const advice = [
+      "Important Information After Completing Your Registration and Payment",
+      "You will receive an exam confirmation email containing all the necessary information a few days before your exam date.",
+      "For your information, please take note of the following details:",
+      "Exam Location: You must come to our centre located at 934 Corydon Avenue.",
+      "Schedule: You must be present at our centre from 9:50a.m. to 6:00p.m.",
+      "Identification: You must bring your passport as a form of identification.",
+      "Equipment: We will provide you with headphones & computers for the exam.",
+    ].join(" ");
+    if (text(rest.slice(information[0].index)).replace(/\s+\./g, ".") !== advice) return false;
+  }
+  const notice = rest.slice(0, information[0]?.index);
+  if (!notice.includes(registrationLink)) return false;
+  const match = text(notice).match(/^NO MU(?:L)?TIPLE REGISTRATIONS FOR THE SAME CANDIDATE!\s+All the sessions offered in ([a-z]+) and ([a-z]+) (20\d{2}) are SOLD OUT\s*\.\s+New dates will be announced soon!\s+Thank you for your patience!\s+No refund or deferment is possible\. Cancellations for climatic or personal reasons are not possible\.\s+Registration(?: Registration)?$/i);
+  if (!match) return false;
+  const firstMonth = MONTHS.findIndex(month => month.toLowerCase() === match[1].toLowerCase());
+  const lastMonth = MONTHS.findIndex(month => month.toLowerCase() === match[2].toLowerCase());
+  // These are the scope of the closure, never exam dates or reminder times.
+  return firstMonth >= 0 && lastMonth > firstMonth;
+}
+
 function publishedClock(value: string): string {
   const match = value.match(/^(0?[1-9]|1[0-2]):([0-5]\d)\s*(am|pm)$/i);
   if (!match) throw new Error("Winnipeg: invalid published exam time; state must be preserved");
@@ -169,6 +200,7 @@ export function parseWinnipeg(html: string): Slot[] {
 
   const start = titles[0].index! + titles[0][0].length;
   const rest = section.slice(start);
+  if (isSoldOutNotice(rest, validLinks[0][0])) return [];
   const boundary = [...rest.matchAll(/<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]\s*>/gi)]
     .find(heading => /^(?:Next dates will be announced on|Important information)$/i.test(text(heading[1])));
   if (!boundary) return isAnnouncementOnly(rest) ? [] : publishedDateList(rest);

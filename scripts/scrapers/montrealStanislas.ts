@@ -35,7 +35,7 @@ function parseRow(html: string) {
   if (!heading || heading.index === undefined) invalid("missing activity heading");
   const label = text(heading[1]).normalize("NFD").replace(/\p{M}/gu, "").toUpperCase();
   const fee = /^FRAIS ADMINISTRATIFS - FRAIS ADM (.+?) CA(?:\s*-?\s*PM)?$/.exec(label);
-  const exam = /^TCF CANADA - TCFCA \(CO EO CE EE\) (.+?)(?: P)?$/.exec(label);
+  const exam = /^TCF CANADA - TCFCA \(CO EO CE EE\)\s*(.+?)(?: P)?$/.exec(label);
   if (!exam && !fee) invalid("unrecognized activity in TCF Canada results");
   const date = isoDate((exam ?? fee)![1]);
 

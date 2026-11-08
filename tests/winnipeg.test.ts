@@ -10,6 +10,7 @@ const paragraphDates = readFileSync(new URL("./fixtures/winnipeg-paragraph-dates
 const countedParagraphs = readFileSync(new URL("./fixtures/winnipeg-counted-paragraphs-2026-10-17.html", import.meta.url), "utf8");
 const announcementOnly = readFileSync(new URL("./fixtures/winnipeg-announcement-only-2026-10-20.html", import.meta.url), "utf8");
 const publishedSchedule = readFileSync(new URL("./fixtures/winnipeg-published-schedule-2026-10-24.html", import.meta.url), "utf8");
+const soldOutNotice = readFileSync(new URL("./fixtures/winnipeg-sold-out-2026-11-08.html", import.meta.url), "utf8");
 const page = (sessions: string, options: { context?: string; registration?: string; boundary?: string } = {}) =>
   `<h2>${options.context ?? "TCF CANADA"}</h2><section><h2>Next sessions</h2>${sessions}`
   + `<h2>${options.boundary ?? "Next dates will be announced on"}</h2><h2>October 09, 2026 at 5 PM</h2>`
@@ -150,6 +151,61 @@ test("Winnipeg's observed complete next-release-only card has no published exam 
   assert.deepEqual(await scrapeWinnipeg({fetchImpl: async () => htmlResponse(announcementOnly)}), []);
   assert.deepEqual(parseWinnipeg(announcementOnly.replace(/\s+/g, " ")), []);
   assert.deepEqual(parseWinnipeg(announcementOnly.replace("Friday, October 23rd at 5:00pm", "Monday, November 2nd at 10:30 am")), []);
+});
+
+test("Winnipeg recognizes the complete November sold-out notice without inventing dates or reminders", async () => {
+  assert.deepEqual(await scrapeWinnipeg({fetchImpl: async () => htmlResponse(soldOutNotice)}), []);
+  assert.deepEqual(parseWinnipeg(soldOutNotice.replace(/\s+/g, " ")), []);
+  assert.deepEqual(parseWinnipeg(soldOutNotice.replace("November and December 2026", "January and February 2027")), []);
+  // Inline emphasis and paragraph formatting do not change the notice meaning.
+  assert.deepEqual(parseWinnipeg(soldOutNotice.replace(/<h3>\s*<span style="color: #f66c3d;">/, '<p><span style="color: #f66c3d;">')
+    .replace(/<\/h3>\s*<h3><strong><span style="color: #6f205d;">New dates/, '</p><h3><strong><span style="color: #6f205d;">New dates')), []);
+});
+
+test("Winnipeg sold-out notice rejects incomplete, contradictory or ambiguous closure evidence", () => {
+  for (const [from, to] of [
+    ["All the sessions offered", "Some of the sessions offered"],
+    ["are <span", "are not <span"],
+    ["November and December 2026", "November and November 2026"],
+    ["November and December 2026", "December and November 2026"],
+    ["November and December 2026", "November and Unknown 2026"],
+    ["November and December 2026", "November and December"],
+    ["New dates will be announced soon!", "New dates may be announced soon!"],
+    ["New dates will be announced soon!", "December 12 (1 spot available)"],
+    ["Thank you for your patience!", "Thank you for your patience! December 12 (1 spot available)"],
+    ["Thank you for your patience!", "Thank you for your patience! Extra sessions on request"],
+    ["Cancellations for climatic or personal reasons are not possible.", ""],
+    ["Important Information After Completing Your Registration and Payment", "Other sessions"],
+    ["Exam Location:", "December 12, 2026 (1 spot available)"],
+    ["Equipment:", "Equipment: Extra sessions on request"],
+    ["</section>", '<div class="s8-templates-card"><h3>January 16, 2027 (5 spots available)</h3></div></section>'],
+  ]) {
+    const changed = soldOutNotice.replace(from, to);
+    assert.notEqual(changed, soldOutNotice, "negative mutation must take effect");
+    assert.throws(() => parseWinnipeg(changed), /Winnipeg:/);
+  }
+  const title = "Important Information After Completing Your Registration and Payment";
+  assert.throws(() => parseWinnipeg(soldOutNotice.replace(title, `${title}</span></strong></h3><h3>${title}`)), /Winnipeg:/);
+});
+
+test("Winnipeg sold-out recovery retains visibility, page and registration-link safeguards", () => {
+  for (const [from, to] of [
+    ["<h2>TCF Canada</h2>", "<h2>TCF Quebec</h2>"],
+    ["<h2>Next sessions</h2>", "<h2>Previous sessions</h2>"],
+    ["<section ", "<section hidden "],
+    ["All the sessions offered", '<span aria-hidden="true">All the sessions offered</span>'],
+    [WINNIPEG_REGISTRATION, "https://other.example/register"],
+    ['<a class="s8-templates-button-linkOverlay"', '<a aria-disabled="true" class="s8-templates-button-linkOverlay"'],
+  ]) {
+    const changed = soldOutNotice.replace(from, to);
+    assert.notEqual(changed, soldOutNotice, "negative mutation must take effect");
+    assert.throws(() => parseWinnipeg(changed), /Winnipeg:/);
+  }
+  const link = soldOutNotice.match(/<a\b[^>]*>Registration<\/a>/)![0];
+  // The valid link must be in the notice, not merely in the advice card.
+  const movedLink = soldOutNotice.replace(link, "Registration").replace("Exam Location:", `Exam Location: ${link}`);
+  assert.throws(() => parseWinnipeg(movedLink), /Winnipeg:/);
+  assert.throws(() => parseWinnipeg(soldOutNotice.replace(link, link + link)), /Winnipeg:/);
 });
 
 test("Winnipeg's captured new schedule yields three published dates and a validated window, without inventing seats or years", async () => {

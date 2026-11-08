@@ -215,6 +215,35 @@ test("Winnipeg layout recovery announces only the added date and preserves state
   }
 });
 
+test("Winnipeg sold-out recovery clears prior dates silently and unknown notices preserve state", async () => {
+  const [openHtml, closedHtml] = await Promise.all([
+    readFile(new URL("./fixtures/winnipeg-next-sessions.html", import.meta.url), "utf8"),
+    readFile(new URL("./fixtures/winnipeg-sold-out-2026-11-08.html", import.meta.url), "utf8"),
+  ]);
+  let html = closedHtml.replace("All the sessions offered", "Some of the sessions offered");
+  const source = { ...createSources().find(source => source.key === "winnipeg")!, scrape: async () => parseWinnipeg(html) };
+  let rows: StateRow[] = [{ city: "winnipeg", exam_type: "TCF Canada", slots: parseWinnipeg(openHtml) }];
+  const originalRows = structuredClone(rows);
+  const writes: boolean[] = [];
+  const io: MonitorDependencies = {
+    getPrevState: async () => structuredClone(rows),
+    upsertState: async (city, exam_type, slots, notified) => {
+      rows = [{ city, exam_type, slots: structuredClone(slots) }];
+      writes.push(notified);
+    },
+    notifyDiscord: async () => assert.fail("a sold-out notice must not send an availability alert"),
+    runRegistrationReminders: async () => assert.fail("a sold-out notice must not schedule reminders"),
+  };
+  await assert.rejects(runMonitor([source], false, io), /winnipeg \(scrape\)/);
+  assert.deepEqual(rows, originalRows);
+  assert.deepEqual(writes, []);
+  html = closedHtml;
+  await runMonitor([source], false, io);
+  await runMonitor([source], false, io);
+  assert.deepEqual(rows[0].slots, []);
+  assert.deepEqual(writes, [false, false]);
+});
+
 const t0 = Date.parse("2026-10-07T00:00:00Z");
 const minute = 60_000;
 const blockedPaper: CityConfig = { ...paper, scrape: async () => { throw new TorontoPaperChallengeError("known challenge"); } };
