@@ -1,0 +1,66 @@
+name: Repair offline tests
+on:
+  push:
+    branches:
+      - repair/ci-diagnostics-20261108
+permissions:
+  contents: read
+jobs:
+  offline-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Confirm test-only scope
+        run: |
+          test "$(git hash-object .github/workflows/monitor.yml)" = 04722a0cc8c5229411ea0c9d21205c375e43f11b
+          test -z "$POSTGRES_URL"
+          test -z "$DISCORD_WEBHOOK_TORONTO"
+          test "$(node -p 'process.version')" = v20.20.2
+          git diff --check ab68342c802162ed66f232c27163ed70a223b713 HEAD
+      - run: npm ci
+      - name: Reproduce upstream Node 20 IPC defect and verify stderr workaround
+        run: |
+          cat > /tmp/node20-ipc-repro.mjs <<'JS'
+          import { writeSync } from 'node:fs';
+          import test from 'node:test';
+          import { DefaultSerializer } from 'node:v8';
+          test('a passing test', () => {});
+          const s = new DefaultSerializer();
+          s.writeHeader();
+          s.writeValue({ __proto__: null, type: 'test:diagnostic',
+            data: { __proto__: null, nesting: 0, message: 'hi', file: 'node20-ipc-repro.mjs' } });
+          const payload = s.releaseBuffer();
+          const size = Buffer.alloc(4);
+          size.writeUInt32BE(payload.length);
+          const message = Buffer.concat([Buffer.from([0xff, 0x0f]), size, payload]);
+          const tail = '\n🟡 서버 실행 중 -> local-only reproduction\n';
+          if (process.env.SAFE_LOGS === '1') {
+            writeSync(1, message);
+            console.log(tail);
+          } else {
+            writeSync(1, Buffer.concat([message, Buffer.from(tail, 'utf8')]));
+          }
+          JS
+          set +e
+          node --test /tmp/node20-ipc-repro.mjs > /tmp/ipc-before.log 2>&1
+          result=$?
+          set -e
+          cat /tmp/ipc-before.log
+          test "$result" -ne 0
+          grep -F 'Unable to deserialize cloned data' /tmp/ipc-before.log
+          SAFE_LOGS=1 node --import "$PWD/tests/helpers/test-console.mjs" --test /tmp/node20-ipc-repro.mjs
+      - run: npm test
+      - run: npm run typecheck
+      - name: Stress the previously failing monitor tests
+        run: |
+          for attempt in $(seq 1 20); do
+            node --import tsx --import ./tests/helpers/test-console.mjs --test tests/monitor.test.ts > /tmp/monitor-repeat.log 2>&1 || { cat /tmp/monitor-repeat.log; exit 1; }
+            grep -E '^# (tests|pass|fail) ' /tmp/monitor-repeat.log
+          done

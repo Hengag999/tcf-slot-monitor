@@ -98,11 +98,33 @@ export function parseUqamCalendar(html: string, now = new Date()) {
   return slots;
 }
 
-export async function scrapeMontrealUqam() {
-  const response = await fetch(CALENDAR, { redirect: 'error', signal: AbortSignal.timeout(15_000),
+// Only structural counts and fixed booleans are logged. Never emit page text,
+// URLs, cookies or arbitrary server-provided values when a response is unknown.
+export function uqamHtmlDiagnostics(html: string): string {
+  const visible = visibleHtml(html);
+  return JSON.stringify({
+    chars: html.length,
+    rawMainTags: (html.match(/<main\b/gi) ?? []).length,
+    visibleMainSections: [...visible.matchAll(/<main\b[^>]*>([\s\S]*?)<\/main>/gi)].length,
+    visibleTables: (visible.match(/<table\b/gi) ?? []).length,
+    expectedHeading: /<h1\b[^>]*>\s*Calendrier tests TCF\s*<\/h1>/i.test(visible),
+    challengeMarkers: /cf-chl-|challenge-platform|g-recaptcha|hcaptcha|verify you are human|access denied/i.test(html),
+  });
+}
+
+export async function scrapeMontrealUqam(options: { fetchImpl?: typeof fetch } = {}) {
+  const response = await (options.fetchImpl ?? fetch)(CALENDAR, { redirect: 'error', signal: AbortSignal.timeout(15_000),
     headers: { 'User-Agent': 'TCF-Slot-Monitor/1.0 (+https://github.com/Hengag999/tcf-slot-monitor)' } });
   if (!response.ok || !response.headers.get('content-type')?.includes('text/html')) invalid(`calendar HTTP ${response.status} or unexpected content type`);
-  return parseUqamCalendar(await response.text());
+  const html = await response.text();
+  try {
+    return parseUqamCalendar(html);
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('UQAM: ')) {
+      throw new Error(`${error.message}; HTML diagnostics=${uqamHtmlDiagnostics(html)}`);
+    }
+    throw error;
+  }
 }
 
 if (process.argv[1]?.endsWith('/montrealUqam.ts')) {
