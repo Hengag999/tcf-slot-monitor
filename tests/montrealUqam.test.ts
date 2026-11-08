@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { parseUqamCalendar } from '../scripts/scrapers/montrealUqam';
+import { parseUqamCalendar, scrapeMontrealUqam, uqamHtmlDiagnostics } from '../scripts/scrapers/montrealUqam';
 
 const page = readFileSync(new URL('./fixtures/montreal-uqam-calendar.html', import.meta.url), 'utf8');
 const now = new Date('2026-11-07T12:00:00Z');
@@ -47,4 +47,42 @@ test('archived or hidden calendars cannot announce seats, including when a visib
   for (const hidden of [page.replace(table, `<figure class="d-none">${table}</figure>`),
     page.replace(button, `<div hidden>${button}</div>`), page.replace('<a class=', '<a aria-disabled="true" class='),
     page + closed]) assert.throws(() => parseUqamCalendar(hidden, now));
+});
+
+test('UQAM unknown responses expose only structural diagnostics and still reject', async () => {
+  const secret = 'private-cookie-token-do-not-log';
+  const html = `<html><title>${secret}</title><body><script src="/cf-chl-/${secret}"></script>Verify you are human</body></html>`;
+  const diagnostics = JSON.parse(uqamHtmlDiagnostics(html));
+  assert.deepEqual(diagnostics, {
+    chars: html.length, rawMainTags: 0, visibleMainSections: 0,
+    visibleTables: 0, expectedHeading: false, challengeMarkers: true,
+  });
+  let requests = 0;
+  await assert.rejects(scrapeMontrealUqam({ fetchImpl: (async (_url, init) => {
+    requests++;
+    assert.equal(init?.redirect, 'error');
+    return new Response(html, { headers: { 'Content-Type': 'text/html' } });
+  }) as typeof fetch }), error => {
+    assert.ok(error instanceof Error);
+    assert.match(error.message, /calendar main content missing or ambiguous/);
+    assert.match(error.message, /HTML diagnostics=/);
+    assert.ok(!error.message.includes(secret));
+    assert.ok(!error.message.includes('<html>'));
+    return true;
+  });
+  assert.equal(requests, 1, 'diagnostics must not add retries or accept an unknown page');
+});
+
+test('UQAM diagnostics distinguish hidden and duplicate calendars without weakening validation', () => {
+  const hidden = `<div hidden>${page}</div>`;
+  const hiddenFacts = JSON.parse(uqamHtmlDiagnostics(hidden));
+  assert.equal(hiddenFacts.rawMainTags, 1);
+  assert.equal(hiddenFacts.visibleMainSections, 0);
+  assert.equal(hiddenFacts.expectedHeading, false);
+  const duplicates = page + page;
+  const duplicateFacts = JSON.parse(uqamHtmlDiagnostics(duplicates));
+  assert.equal(duplicateFacts.visibleMainSections, 2);
+  assert.throws(() => parseUqamCalendar(hidden, now));
+  assert.throws(() => parseUqamCalendar(duplicates, now));
+  assert.deepEqual(parseUqamCalendar(page, now).map(slot => slot.date), ['2026-12-04', '2027-01-15', '2027-02-05']);
 });
