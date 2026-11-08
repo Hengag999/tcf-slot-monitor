@@ -51,8 +51,9 @@ Diff strategies, selected per city by a flag in the `cities` config:
 
 | Strategy | Cities | Behaviour |
 |----------|--------|-----------|
-| **0 → N transition** (default) | Toronto, Calgary, Halifax, Ottawa, Ashton | Notify only when an exam type went from **0** known slots to **>0**. Avoids re-pinging while slots stay open. |
-| **Per-date diff** (`diffByDate: true`) | North York, Edmonton | Notify about any **date not present in the previous set** (set difference on `slot.date`). Catches new dates appearing while others are already open. |
+| **0 → N transition** (default) | Toronto, Calgary | Notify only when an exam type went from **0** known slots to **>0**. Avoids re-pinging while slots stay open. |
+| **Per-session diff** (`diffBySessionId: true`) | Halifax, Ottawa | Notify for each bookable AEC examination ID absent from the previous successful snapshot of that format. Includes same-date sessions and observed reopenings. Existing saved IDs are the rollout baseline; unchanged availability is not replayed. Does not track increases in numeric seat counts. |
+| **Per-date diff** (`diffByDate: true`) | Ashton, North York, Edmonton availability, Winnipeg, Montréal availability sources | Notify about any **date not present in the previous set** (set difference on `slot.date`). Catches new dates appearing while others are already open. Ashton's date label includes the time. |
 | **Registration reminders** (`reminderMode: true`) | Vancouver, Victoria | Doesn't diff availability at all. The shared AF "exam-selector" platform advertises each exam's *registration-open* time ahead of time; spots vanish in seconds, so instead of catching availability the engine pings reminders **before** each exam's open time (new-session, then 3d/2d/1d). See `src/lib/registrationReminders.ts`. The orchestrator routes `reminderMode` cities to `runRegistrationReminders` (passing the city key + Chinese label) and skips the diff. |
 
 ### File layout

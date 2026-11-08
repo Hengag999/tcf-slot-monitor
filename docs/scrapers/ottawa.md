@@ -5,7 +5,7 @@
 | Platform | Alliance Française Ottawa AEC widget, `afottawa.aec.app` |
 | API | Public examinations branch 1, types 5 (computer) and 79 (paper) |
 | State | City `ottawa`, separate `TCF Canada sur ordinateur` and `TCF Canada (papier)` rows |
-| Alerts | Zero-to-available per format; state advances only after accepted delivery |
+| Alerts | Newly bookable session IDs and observed reopenings, independently per format; state advances only after accepted delivery |
 | Status | October 15 HTTP 500 recovered on the next automatic run; retry hardening shipped as `1d57bb8` and Ottawa passed three subsequent timer cycles |
 
 The shared AEC parser validates branch and exam identity, complete group arrays,
@@ -13,6 +13,23 @@ dates/times, explicit availability flags, and allowed registration destinations.
 Both formats must succeed for the scraper to return its combined snapshot. One
 failed endpoint preserves both prior formats. HTTP 204 and validated empty arrays
 are accepted empty states; blank HTTP 200 or malformed content is not.
+
+## November 8 per-session alerts
+
+The user approved alerts for individual newly available sessions and reopenings.
+Each format compares its bookable AEC examination IDs with its previous successful
+snapshot, so an additional session or a reopened session can notify while other
+computer or paper sessions remain open. Sessions on the same date have distinct
+IDs and are handled separately. A reopening requires a successful intervening
+check that observed the session unavailable; failed checks preserve the baseline.
+An already-open session gaining more seats does not notify because numeric seat
+counts are not tracked.
+
+The saved slots already contain these IDs. Rollout reuses them without resetting
+state, migrating the database, or replaying unchanged listings. Repeated and
+reordered listings stay quiet, failed delivery leaves the opening eligible for
+retry, and the other format's state remains independent. Source validation,
+complete two-format scraping, retries, and the existing outage policy are unchanged.
 
 Ottawa alone opts into three attempts for examinations GET responses with HTTP
 500/502/503/504, with one- and two-second delays and fresh 20-second deadlines.

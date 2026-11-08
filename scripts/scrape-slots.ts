@@ -44,6 +44,9 @@ export interface CityConfig {
   notificationStyle?: NotificationStyle;
   // When true, notify per newly-appeared date instead of only on 0→N
   diffByDate?: boolean;
+  // Stable AEC sitting IDs distinguish sessions on the same date. Compare only
+  // currently bookable sessions, so an observed closure rearms a reopening.
+  diffBySessionId?: boolean;
   // When true, the city runs the registration-reminder engine instead of the
   // availability diff (Vancouver, Victoria — see src/lib/registrationReminders.ts).
   reminderMode?: boolean;
@@ -66,8 +69,8 @@ export function createSources(): CityConfig[] {
   { key: "toronto", source: "paper", label: "Toronto", scrape: scrapeTorontoPaper, examTypes: ["P-TCF Canada"], webhookEnv: "DISCORD_WEBHOOK_TORONTO" },
   { key: "calgary", label: "Calgary", scrape: scrapeCalgary, webhookEnv: "DISCORD_WEBHOOK_CALGARY" },
   { key: "vancouver", label: "Vancouver", scrape: async () => (await bcRows()).filter((row) => !/victoria/i.test(row.location)), webhookEnv: "DISCORD_WEBHOOK_VANCOUVER", reminderMode: true, zhLabel: "温哥华" },
-  { key: "halifax", label: "Halifax", scrape: scrapeHalifax, examTypes: ["TCF Canada"], webhookEnv: "DISCORD_WEBHOOK_HALIFAX", aecKeyPageGrace: { origin: "https://afhalifax.aec.app" } },
-  { key: "ottawa", label: "Ottawa", scrape: scrapeOttawa, examTypes: ["TCF Canada sur ordinateur", "TCF Canada (papier)"], webhookEnv: "DISCORD_WEBHOOK_OTTAWA", aecKeyPageGrace: { origin: "https://afottawa.aec.app" } },
+  { key: "halifax", label: "Halifax", scrape: scrapeHalifax, examTypes: ["TCF Canada"], webhookEnv: "DISCORD_WEBHOOK_HALIFAX", diffBySessionId: true, aecKeyPageGrace: { origin: "https://afhalifax.aec.app" } },
+  { key: "ottawa", label: "Ottawa", scrape: scrapeOttawa, examTypes: ["TCF Canada sur ordinateur", "TCF Canada (papier)"], webhookEnv: "DISCORD_WEBHOOK_OTTAWA", diffBySessionId: true, aecKeyPageGrace: { origin: "https://afottawa.aec.app" } },
   { key: "ashton", label: "Ashton", scrape: scrapeAshton, webhookEnv: "DISCORD_WEBHOOK_ASHTON", diffByDate: true },
   { key: "northyork", label: "North York", scrape: scrapeNorthYork, webhookEnv: "DISCORD_WEBHOOK_NORTHYORK", diffByDate: true },
   { key: "victoria", label: "Victoria", scrape: scrapeVictoria, webhookEnv: "DISCORD_WEBHOOK_VICTORIA", reminderMode: true, zhLabel: "维多利亚", reminderOptions: { timeZone: "America/Vancouver", timeZoneLabel: "维多利亚时间" } },
@@ -176,7 +179,17 @@ export async function processCity(
     // Determine which slots to notify about
     let slotsToNotify: MonitorSlot[];
 
-    if (city.diffByDate) {
+    if (city.diffBySessionId) {
+      // Existing snapshots already store these IDs: reuse them as the baseline,
+      // without replaying unchanged availability when enabling this policy.
+      const prevIds = new Set(prevSlots.map((s: MonitorSlot) => s.id));
+      slotsToNotify = slots.filter((s) => !prevIds.has(s.id));
+      if (slotsToNotify.length > 0) {
+        console.log(`  [${examType}] ${prevCount} → ${slots.length} — ${slotsToNotify.length} newly available session(s) — NOTIFY`);
+      } else {
+        console.log(`  [${examType}] ${prevCount} → ${slots.length}`);
+      }
+    } else if (city.diffByDate) {
       // Per-date diff: notify only about dates that weren't in the previous set
       const prevDates = new Set(prevSlots.map((s: any) => s.date));
       slotsToNotify = slots.filter((s) => !prevDates.has(s.date));

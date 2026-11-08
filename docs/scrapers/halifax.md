@@ -6,7 +6,7 @@
 | Official entry | `https://afhalifax.ca/test-your-french/tcf/tcf-canada-registration/` |
 | API | `https://afhalifax.aec.app/api/v1/public/examinations/list/1/16` |
 | State | city `halifax`, exam type `TCF Canada` |
-| Alert policy | Zero-to-available; a switch to date diffs was proposed separately |
+| Alert policy | Per-session ID: newly bookable sittings and observed reopenings, even while other sessions remain open |
 | Status | Source coverage and stricter response validation verified in two production cycles October 9; 17 current bookable sittings |
 
 The official TCF page links the dedicated registration widget. Its published
@@ -25,7 +25,25 @@ Dates with advertised availability were October 14–15 and December 2, 4, 7–9
 `15:03:52.051Z`, announcing November 6. Silence is therefore not evidence that
 there are no new bookable dates: the zero-to-available alert policy suppresses
 changes while any prior dates remain open. For example, October 14 now has an
-October 7–11 registration window. Any policy change requires a separate decision.
+October 7–11 registration window. This describes the former policy; the user
+approved the per-session change below on November 8.
+
+## November 8 per-session alerts
+
+Compare each currently bookable AEC examination ID with the previous successful
+snapshot for this city and exam type. A new sitting, including a second time on
+an already-open date, now notifies. A full or otherwise unavailable sitting is
+removed by a successful snapshot and notifies if it later returns. The closure
+and reopening must each be observed by the monitor; changes between checks can
+still be missed. An already-bookable session gaining seats does not notify:
+numeric seat counts are not tracked.
+
+Existing snapshots already contain the same stable IDs, so rollout reuses that
+baseline without a database migration, reset, or repeat of unchanged listings.
+The usual full-source validation, failed-scrape preservation, delivery-before-
+persistence ordering, missing-webhook failure, and outage policy remain intact.
+Failed delivery does not consume an opening. Reordered or unchanged IDs stay
+quiet; other centres' notification strategies are unchanged.
 
 ## Response validation
 
