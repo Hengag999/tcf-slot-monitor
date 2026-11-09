@@ -250,3 +250,20 @@ without another send. Read-only state and the actual Discord message confirmed
 fresh persistence and unchanged notification time. The first two runs passed
 all 12 sources; the third had Toronto paper's recognized challenge within its
 approved grace, with all other sources OK.
+
+## November 9 sold-out advice update
+
+From 14:50 UTC, the existing November/December sold-out notice remained intact,
+but its separate post-registration advice card added that all four skills take
+place on the same exam day. The complete-card validator correctly rejected
+unrecognized text and preserved state. A captured public fixture reproduces
+the failure. The parser now accepts either the original advice text or this
+exact added sentence in its observed position after the schedule. It does not
+discard arbitrary advice, dates or availability text. Existing context,
+visibility, closure and registration-link checks remain unchanged.
+
+All 280 offline tests and typecheck passed, including the new captured card,
+formatting variants, and mutations covering changed/duplicate/misplaced advice,
+extra availability, hidden content and invalid page/link context. The complete
+captured public page parses as no published sessions; no year, date, reminder
+or seat count is inferred from the advice.

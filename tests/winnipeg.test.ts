@@ -11,6 +11,7 @@ const countedParagraphs = readFileSync(new URL("./fixtures/winnipeg-counted-para
 const announcementOnly = readFileSync(new URL("./fixtures/winnipeg-announcement-only-2026-10-20.html", import.meta.url), "utf8");
 const publishedSchedule = readFileSync(new URL("./fixtures/winnipeg-published-schedule-2026-10-24.html", import.meta.url), "utf8");
 const soldOutNotice = readFileSync(new URL("./fixtures/winnipeg-sold-out-2026-11-08.html", import.meta.url), "utf8");
+const soldOutSameDay = readFileSync(new URL("./fixtures/winnipeg-sold-out-2026-11-09.html", import.meta.url), "utf8");
 const page = (sessions: string, options: { context?: string; registration?: string; boundary?: string } = {}) =>
   `<h2>${options.context ?? "TCF CANADA"}</h2><section><h2>Next sessions</h2>${sessions}`
   + `<h2>${options.boundary ?? "Next dates will be announced on"}</h2><h2>October 09, 2026 at 5 PM</h2>`
@@ -186,6 +187,41 @@ test("Winnipeg sold-out notice rejects incomplete, contradictory or ambiguous cl
   }
   const title = "Important Information After Completing Your Registration and Payment";
   assert.throws(() => parseWinnipeg(soldOutNotice.replace(title, `${title}</span></strong></h3><h3>${title}`)), /Winnipeg:/);
+});
+
+test("Winnipeg recognizes the observed sold-out card with the exact same-day exam advice", async () => {
+  assert.deepEqual(await scrapeWinnipeg({fetchImpl: async () => htmlResponse(soldOutSameDay)}), []);
+  assert.deepEqual(parseWinnipeg(soldOutSameDay.replace(/\s+/g, " ")), []);
+  assert.deepEqual(parseWinnipeg(soldOutSameDay.replace(/<u>|<\/u>/g, "")), []);
+  assert.deepEqual(parseWinnipeg(soldOutSameDay), parseWinnipeg(soldOutNotice));
+});
+
+test("Winnipeg same-day advice cannot hide changed availability, unknown text or invalid source context", () => {
+  const sameDay = "All the 4 skills will be done in the same day of the exam.";
+  for (const [from, to] of [
+    [sameDay, "All the 4 skills may be done in the same day of the exam."],
+    [sameDay, `${sameDay} ${sameDay}`],
+    [sameDay, `${sameDay} December 12 (1 spot available)`],
+    [sameDay, `${sameDay} Extra sessions on request`],
+    [sameDay, `<span hidden>${sameDay}</span>`],
+    ["All the sessions offered", "Some of the sessions offered"],
+    ["are <span", "are not <span"],
+    ["November and December 2026", "December and November 2026"],
+    ["New dates will be announced soon!", "December 12 (1 spot available)"],
+    ["Cancellations for climatic or personal reasons are not possible.", ""],
+    ["<h2>TCF Canada</h2>", "<h2>TCF Quebec</h2>"],
+    ["<h2>Next sessions</h2>", "<h2>Previous sessions</h2>"],
+    ["<section ", "<section hidden "],
+    [WINNIPEG_REGISTRATION, "https://other.example/register"],
+    ['<a class="s8-templates-button-linkOverlay"', '<a aria-disabled="true" class="s8-templates-button-linkOverlay"'],
+    ["</section>", '<div><h3>January 16, 2027 (5 spots available)</h3></div></section>'],
+  ]) {
+    const changed = soldOutSameDay.replace(from, to);
+    assert.notEqual(changed, soldOutSameDay, "negative mutation must take effect");
+    assert.throws(() => parseWinnipeg(changed), /Winnipeg:/);
+  }
+  const relocated = soldOutSameDay.replace(sameDay, "").replace("Equipment:", `${sameDay} Equipment:`);
+  assert.throws(() => parseWinnipeg(relocated), /Winnipeg:/);
 });
 
 test("Winnipeg sold-out recovery retains visibility, page and registration-link safeguards", () => {

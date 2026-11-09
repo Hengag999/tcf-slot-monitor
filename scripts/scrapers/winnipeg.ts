@@ -103,7 +103,12 @@ function isSoldOutNotice(rest: string, registrationLink: string): boolean {
       "Identification: You must bring your passport as a form of identification.",
       "Equipment: We will provide you with headphones & computers for the exam.",
     ].join(" ");
-    if (text(rest.slice(information[0].index)).replace(/\s+\./g, ".") !== advice) return false;
+    // November 9 adds only a same-day exam-format note after the schedule.
+    // Accept that exact observed variant, not arbitrary advice or availability.
+    const sameDayAdvice = advice.replace(" Identification:",
+      " All the 4 skills will be done in the same day of the exam. Identification:");
+    const actualAdvice = text(rest.slice(information[0].index)).replace(/\s+\./g, ".");
+    if (actualAdvice !== advice && actualAdvice !== sameDayAdvice) return false;
   }
   const notice = rest.slice(0, information[0]?.index);
   if (!notice.includes(registrationLink)) return false;
