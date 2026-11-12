@@ -1,8 +1,59 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createSources, processCity, type MonitorDependencies } from "../scripts/scrape-slots";
+import { createSources, processCity, runMonitor, type MonitorDependencies } from "../scripts/scrape-slots";
+import { scrapeMontrealAf } from "../scripts/scrapers/montrealAf";
 import { formatSlotNotification } from "../src/lib/discord";
 import type { StateRow } from "../src/lib/db";
+
+test("Montréal exhausted key-page retries fail every run without grace, preserve state and let later sources finish", async context => {
+  const summary = process.env.GITHUB_STEP_SUMMARY;
+  delete process.env.GITHUB_STEP_SUMMARY;
+  context.after(() => {
+    if (summary === undefined) delete process.env.GITHUB_STEP_SUMMARY; else process.env.GITHUB_STEP_SUMMARY = summary;
+  });
+  for (const method of ["log", "warn", "error"] as const) context.mock.method(console, method, () => {});
+  const table = context.mock.method(console, "table", () => {});
+  const source = createSources().find(s => s.key === "montreal-af")!;
+  assert.equal(source.aecKeyPageGrace, undefined);
+  const previous: StateRow = { city: source.key, exam_type: "TCF Canada", slots: [{ id: "keep", date: "2026-12-01" }], checked_at: "2026-11-12T14:45:00Z" };
+  const saved = structuredClone(previous);
+  let laterScrapes = 0;
+  const reads: string[] = [];
+  const writes: string[] = [];
+  const io: MonitorDependencies = {
+    getPrevState: async key => { reads.push(key); return key === source.key ? [saved] : []; },
+    upsertState: async (key, exam_type, slots) => {
+      writes.push(key);
+      if (key === source.key) Object.assign(saved, { exam_type, slots });
+    },
+    notifyDiscord: async () => assert.fail("an exhausted scrape must not notify"),
+    runRegistrationReminders: async () => assert.fail("not a reminder source"),
+  };
+  const later = { ...source, key: "later", scrape: async () => { laterScrapes++; return []; } };
+  for (const status of [521, 522]) {
+    let attempts = 0;
+    const sleeps: number[] = [];
+    const blocked = { ...source, scrape: () => scrapeMontrealAf({
+      fetchImpl: async input => {
+        assert.equal(String(input), "https://afmontreal.aec.app/");
+        attempts++;
+        return new Response("origin unavailable", { status });
+      },
+      sleep: async ms => { sleeps.push(ms); },
+    }) };
+    await assert.rejects(runMonitor([blocked, later], false, io), /montreal-af \(scrape\)/);
+    assert.equal(attempts, 3);
+    assert.deepEqual(sleeps, [1000, 2000]);
+    assert.deepEqual(saved, previous, "saved availability and checked_at remain unchanged");
+    assert.deepEqual(table.mock.calls.at(-1)!.arguments[0], [
+      { source: "montreal-af", status: "SCRAPE FAILED — state preserved" },
+      { source: "later", status: "OK" },
+    ]);
+  }
+  assert.equal(laterScrapes, 2);
+  assert.deepEqual(reads, ["later", "later"], "no Montréal or outage-health reads");
+  assert.deepEqual(writes, ["later", "later"], "no Montréal or outage-health writes");
+});
 
 test("two Montréal centres with the same date notify independently and deduplicate within each channel", async () => {
   const sources = createSources();

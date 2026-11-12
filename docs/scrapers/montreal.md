@@ -15,6 +15,12 @@ Each centre has an independent state key and Discord destination. Availability s
 | Collège Stanislas · `montreal-stanislas` | The Montréal guest catalogue shows places for both the four-component TCF Canada exam and its required administrative fee on the same date. The webhook links to the official portal entry. | [Centre](https://stanislas.qc.ca/tcf/) · [COBA portal](https://monportail.stanislas.qc.ca/capnet/login.asp?NoRegr=3) |
 | Centre Yves-Thériault · `montreal-yves-theriault` | The school announces an upcoming **in-person** registration date for an exam. Reminders identify the Montréal time and address, 3925 rue Villeray. The shared TCF schedule includes Canada, Québec and Tout public. TEF has its own schedule. | [Registration hours and paired exam dates](https://centre-yves-theriault.cssdm.gouv.qc.ca/programmes/tests-francais/) |
 
+## Alliance Française origin retries
+
+The public AEC key page retries only HTTP 521/522, with at most three GET attempts and 1s/2s backoff. Each attempt retains the existing 20-second timeout and redirect rejection. Inventory is fetched and validated only after key discovery succeeds. Other HTTP statuses, transport errors, missing keys and invalid inventory remain failures.
+
+This addresses the [2026-11-12 14:50 UTC check](https://github.com/Hengag999/tcf-slot-monitor/actions/runs/43241375464), when Montréal failed on a single key-page 522 while Halifax recovered using the same bounded retry. Montréal recovered at the next scheduled check; a retry might have recovered it sooner, but that cannot be established retrospectively. Exhaustion still fails the current run and preserves the previous availability snapshot. Montréal has no outage grace period or repeat-error suppression.
+
 ## Other roster entries
 
 - **Université Concordia** offers TCF Canada. The owner chose to skip this centre for this release. [Official exam page](https://www.concordia.ca/cce/language-testing/tcf-test.html)

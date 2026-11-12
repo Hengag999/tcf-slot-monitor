@@ -9,12 +9,14 @@ const source: AecSource = {
   branchId: 1,
   examTypes: [{ id: 10, name: "TCF CANADA" }],
   bookingOrigins: ["https://www.afmontreal.ca"],
+  // Retry transient origin failures within this scrape; exhaustion has no grace.
+  retryKeyPageOriginErrors: true,
 };
 
 type Slot = Omit<AecSlot, "startTime" | "endTime"> & { startTime?: string; endTime?: string };
 
-export async function scrapeMontrealAf(options: { fetchImpl?: typeof fetch; now?: Date } = {}): Promise<Slot[]> {
-  const sittings = await scrapeAecExaminations(source, options.fetchImpl);
+export async function scrapeMontrealAf(options: { fetchImpl?: typeof fetch; now?: Date; sleep?: (ms: number) => Promise<void> } = {}): Promise<Slot[]> {
+  const sittings = await scrapeAecExaminations(source, options.fetchImpl, options.sleep);
   const today = new Intl.DateTimeFormat("sv-SE", {
     timeZone: "America/Toronto", year: "numeric", month: "2-digit", day: "2-digit",
   }).format(options.now ?? new Date());

@@ -26,7 +26,7 @@ export interface AecSource {
   bookingOrigins: string[];
   // Opt in only where observed server failures justify bounded GET retries.
   retryServerErrors?: boolean;
-  // Halifax and Ottawa have returned HTTP 521/522 while discovering the public key.
+  // Opt in for observed key-page HTTP 521/522; outage grace is configured separately.
   retryKeyPageOriginErrors?: boolean;
 }
 
