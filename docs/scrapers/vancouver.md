@@ -58,6 +58,13 @@ replaces the old 0→N availability ping for Vancouver.
   change the agreed reminder policy.
 - **No separate open-now threshold** by design (decided 2026-06-13). Easy to re-add in
   `computeReminders` (`THRESHOLDS` + a kind for lead 0) if wanted.
+- **An open sitting may be renamed in place.** Vancouver's reminder tracker can
+  reuse its fired reminders across consecutive bookable snapshots when both have
+  one matching booking ID, parsed exam date, first schedule, and location. It keeps
+  existing keys and learns the extra identity on ordinary successful checks;
+  no migration or backfill is needed. An unseen ID or a closed, full, or missing
+  row uses the existing matching rules. A rename before the ID is learned may
+  still produce a repeat.
 
 ## Incident log
 - **2026-07-07** — health check: reminder chains confirmed firing live in #vancouver

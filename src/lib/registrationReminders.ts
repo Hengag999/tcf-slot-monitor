@@ -21,6 +21,11 @@
 import { getPrevState, upsertState } from "./db";
 import { postDiscord } from "./discord";
 
+export interface VancouverBookingIdentity {
+  providerId: string;
+  fingerprint?: string; // Parsed date + existing first schedule + existing location.
+}
+
 export interface RegistrationExam {
   // MonitorSlot-compatible fields (so it flows through the orchestrator's scrape type)
   id: string;
@@ -30,6 +35,7 @@ export interface RegistrationExam {
   // reminder-specific fields
   legacyExamKey?: string; // previous label-only key, used for a one-time state migration
   bookingAvailable?: boolean; // explicit booking action observed on the source page
+  vancouverBooking?: VancouverBookingIdentity;
   examKey: string; // stable per-sitting key
   label: string; // e.g. "TCF-Canada September 2, 2026"
   location?: string;
@@ -45,6 +51,7 @@ export interface TrackingEntry {
   label: string;
   registrationOpensAt: number | null;
   firedReminders: string[]; // subset of "new" | "3d" | "2d" | "1d"
+  vancouverBooking?: Required<VancouverBookingIdentity>;
 }
 
 export interface ReminderPing {
@@ -74,7 +81,7 @@ export function computeReminders(
   exams: RegistrationExam[],
   prevTracking: TrackingEntry[],
   nowMs: number,
-  options: { futureOnly?: boolean } = {},
+  options: { futureOnly?: boolean; matchVancouverBookingIdentity?: boolean } = {},
 ): { pings: ReminderPing[]; tracking: TrackingEntry[] } {
   const prevByKey = new Map<string, TrackingEntry[]>();
   for (const entry of prevTracking) {
@@ -85,11 +92,42 @@ export function computeReminders(
   }
   const pings: ReminderPing[] = [];
   const tracking: TrackingEntry[] = [];
+  const previousByKey = (ex: RegistrationExam) => prevByKey.get(ex.examKey)
+    ?? (ex.legacyExamKey ? prevByKey.get(ex.legacyExamKey) : undefined) ?? [];
+  const prevByBooking = new Map<string, TrackingEntry[]>();
+  const countsByBooking = new Map<string, number>();
+  const claimedByKey = new Set<TrackingEntry>();
+  const observedBooking = (ex: RegistrationExam) => options.matchVancouverBookingIdentity
+    && ex.bookingAvailable === true && ex.statusClass === "es-status-available" ? ex.vancouverBooking : undefined;
+  if (options.matchVancouverBookingIdentity) {
+    for (const entry of prevTracking) {
+      const id = entry.vancouverBooking?.providerId;
+      if (!id) continue;
+      const entries = prevByBooking.get(id) ?? [];
+      entries.push(entry);
+      prevByBooking.set(id, entries);
+    }
+    for (const ex of exams) {
+      for (const entry of previousByKey(ex)) claimedByKey.add(entry);
+      const id = observedBooking(ex)?.providerId;
+      if (id) countsByBooking.set(id, (countsByBooking.get(id) ?? 0) + 1);
+    }
+  }
 
   for (const ex of exams) {
-    const previous = prevByKey.get(ex.examKey)
-      ?? (ex.legacyExamKey ? prevByKey.get(ex.legacyExamKey) : undefined)
-      ?? [];
+    let previous = previousByKey(ex);
+    const booking = observedBooking(ex);
+    const vancouverBooking = booking?.fingerprint && countsByBooking.get(booking.providerId) === 1
+      ? { providerId: booking.providerId, fingerprint: booking.fingerprint } : undefined;
+    if (!previous.length && vancouverBooking) {
+      const matches = prevByBooking.get(vancouverBooking.providerId);
+      const match = matches?.length === 1 ? matches[0] : undefined;
+      // Only bridge a one-to-one rename of a continuously bookable sitting.
+      // Exact / legacy matches win, and absent or unavailable rows never carry a booking alias forward.
+      if (match && !claimedByKey.has(match) && match.vancouverBooking?.fingerprint === vancouverBooking.fingerprint) {
+        previous = [match];
+      }
+    }
     const fired = new Set(previous.flatMap((entry) => entry.firedReminders ?? []));
     const opensAtMs = ex.registrationOpensAt != null ? ex.registrationOpensAt * 1000 : null;
     const futureOpening = opensAtMs != null && opensAtMs > nowMs;
@@ -121,6 +159,7 @@ export function computeReminders(
       label: ex.label,
       registrationOpensAt: ex.registrationOpensAt,
       firedReminders: [...fired],
+      ...(vancouverBooking && { vancouverBooking }),
     });
   }
 
@@ -142,6 +181,7 @@ function makePing(ex: RegistrationExam, kind: ReminderPing["kind"]): ReminderPin
 
 export interface ReminderOptions {
   futureOnly?: boolean;
+  matchVancouverBookingIdentity?: boolean;
   examType?: string;
   timeZone?: string;
   timeZoneLabel?: string;

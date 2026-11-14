@@ -62,13 +62,13 @@ export function createSources(): CityConfig[] {
   // Cache only inside one run: Edmonton's consumers share one complete listing.
   let bc: Promise<ExamSelectorRow[]> | undefined;
   let edmonton: Promise<ExamSelectorRow[]> | undefined;
-  const bcRows = () => bc ??= scrapeTcfListing();
+  const bcRows = () => bc ??= scrapeTcfListing({ captureVancouverBookingIdentity: true });
   const edmontonRows = () => edmonton ??= scrapeEdmontonExams();
   return [
   { key: "toronto", source: "computer", label: "Toronto", scrape: scrapeTorontoComputer, examTypes: ["E-TCF Canada"], webhookEnv: "DISCORD_WEBHOOK_TORONTO" },
   { key: "toronto", source: "paper", label: "Toronto", scrape: scrapeTorontoPaper, examTypes: ["P-TCF Canada"], webhookEnv: "DISCORD_WEBHOOK_TORONTO" },
   { key: "calgary", label: "Calgary", scrape: scrapeCalgary, webhookEnv: "DISCORD_WEBHOOK_CALGARY" },
-  { key: "vancouver", label: "Vancouver", scrape: async () => (await bcRows()).filter((row) => !/victoria/i.test(row.location)), webhookEnv: "DISCORD_WEBHOOK_VANCOUVER", reminderMode: true, zhLabel: "温哥华" },
+  { key: "vancouver", label: "Vancouver", scrape: async () => (await bcRows()).filter((row) => !/victoria/i.test(row.location)), webhookEnv: "DISCORD_WEBHOOK_VANCOUVER", reminderMode: true, zhLabel: "温哥华", reminderOptions: { matchVancouverBookingIdentity: true } },
   { key: "halifax", label: "Halifax", scrape: scrapeHalifax, examTypes: ["TCF Canada"], webhookEnv: "DISCORD_WEBHOOK_HALIFAX", diffBySessionId: true, aecKeyPageGrace: { origin: "https://afhalifax.aec.app" } },
   { key: "ottawa", label: "Ottawa", scrape: scrapeOttawa, examTypes: ["TCF Canada sur ordinateur", "TCF Canada (papier)"], webhookEnv: "DISCORD_WEBHOOK_OTTAWA", diffBySessionId: true, aecKeyPageGrace: { origin: "https://afottawa.aec.app" } },
   { key: "ashton", label: "Ashton", scrape: scrapeAshton, webhookEnv: "DISCORD_WEBHOOK_ASHTON", diffByDate: true },

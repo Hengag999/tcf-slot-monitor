@@ -1,7 +1,7 @@
 // Shared Oncord exam-selector listing parser (AF-CAPA and AF Edmonton).
 // Follow the server-rendered Show More links: the initial table has only 15 rows.
 import { createHash } from "node:crypto";
-import type { RegistrationExam } from "./registrationReminders";
+import type { RegistrationExam, VancouverBookingIdentity } from "./registrationReminders";
 
 const LISTING_PAGE = "https://www.alliancefrancaise.ca/en/language/exams/tcf-canada/";
 const HEADERS = { "User-Agent": "Mozilla/5.0 (compatible; tcf-slot-monitor/1.0)" };
@@ -25,6 +25,7 @@ export interface ExamSelectorOptions {
   url?: string;
   keyPrefix?: string;
   fetchImpl?: typeof fetch;
+  captureVancouverBookingIdentity?: boolean;
 }
 
 function decodeEntities(s: string): string {
@@ -60,11 +61,46 @@ function sameOriginUrl(href: string, base: string): string {
   return url.href;
 }
 
+const ENGLISH_MONTHS = "january february march april may june july august september october november december".split(" ");
+const FRENCH_MONTHS = "janvier février mars avril mai juin juillet août septembre octobre novembre décembre".split(" ");
+const FRENCH_WEEKDAYS = "dimanche lundi mardi mercredi jeudi vendredi samedi".split(" ");
+
+function vancouverLabelDate(label: string): string | undefined {
+  // Only unambiguous date-only labels can corroborate a language-only rename.
+  const normalized = label.normalize("NFKC").toLowerCase();
+  const english = /^tcf[\s-]+canada[\s-]+([a-z]+) (\d{1,2})\s*,?\s+(20\d{2})$/.exec(normalized);
+  const french = /^tcf[\s-]+canada[\s-]+(\p{L}+), (\d{1,2}) (\p{L}+) (20\d{2})$/u.exec(normalized);
+  if (!english && !french) return;
+  const day = Number((english ?? french)![2]);
+  const month = english ? ENGLISH_MONTHS.indexOf(english[1]) : FRENCH_MONTHS.indexOf(french![3]);
+  const year = Number(english ? english[3] : french![4]);
+  const date = new Date(Date.UTC(year, month, day));
+  if (month < 0 || date.getUTCMonth() !== month || date.getUTCDate() !== day
+    || (french && FRENCH_WEEKDAYS[date.getUTCDay()] !== french[1])) return;
+  return date.toISOString().slice(0, 10);
+}
+
+function vancouverBookingIdentity(label: string, firstSchedule: string, location: string, bookingUrl: string, tag: string): VancouverBookingIdentity | undefined {
+  const url = new URL(bookingUrl);
+  if (url.origin !== new URL(LISTING_PAGE).origin || url.pathname !== "/af/exam-selector/order/") return;
+  const ids = url.searchParams.getAll("exam_id");
+  if (ids.length !== 1 || !/^[1-9]\d{0,14}$/.test(ids[0])) return;
+  const providerId = ids[0];
+  const attributeId = attr(tag, "exam_id");
+  const date = vancouverLabelDate(label);
+  // Retain the observed URL ID for detecting duplicate IDs in this snapshot,
+  // but no identity can be learned or matched without all corroborating fields.
+  if (!date || !firstSchedule || (attributeId !== undefined && attributeId !== providerId)) return { providerId };
+  const details = [date, firstSchedule, location].map(part => part.normalize("NFKC").toLowerCase());
+  return { providerId, fingerprint: createHash("sha256").update(JSON.stringify(details)).digest("hex") };
+}
+
 /** Parse one complete server page. No network, state, or notification side effects. */
 export function parseExamSelectorPage(
   html: string,
   listingPage: string = LISTING_PAGE,
   keyPrefix = "tcf",
+  captureVancouverBookingIdentity = false,
 ): { exams: ExamSelectorRow[]; nextUrl: string | null } {
   const table = [...html.matchAll(/(<table\b[^>]*>)([\s\S]*?)<\/table>/gi)]
     .find((match) => hasClass(match[1], "es-exams-table"));
@@ -156,11 +192,14 @@ export function parseExamSelectorPage(
     // Closed rows have no source ID. Keep '*' (Edmonton's afternoon marker),
     // location, and the first sitting schedule/year; do not key on mutable
     // status, registration window, booking link, or a later-confirmed oral time.
-    const firstSchedule = cells[1].match(/<div\b[^>]*class=["']es-schedule-group["'][^>]*>([\s\S]*?)<\/div>/i)?.[1] ?? cells[1];
-    const identity = [label, stripTags(firstSchedule), location].map((part) => part.normalize("NFKC").toLowerCase());
+    const firstSchedule = stripTags(cells[1].match(/<div\b[^>]*class=["']es-schedule-group["'][^>]*>([\s\S]*?)<\/div>/i)?.[1] ?? cells[1]);
+    const identity = [label, firstSchedule, location].map((part) => part.normalize("NFKC").toLowerCase());
     const examKey = `${keyPrefix}-${createHash("sha256").update(JSON.stringify(identity)).digest("hex").slice(0, 20)}`;
+    const vancouverBooking = captureVancouverBookingIdentity && bookingAvailable
+      ? vancouverBookingIdentity(label, firstSchedule, location, bookingUrl, statusTag!) : undefined;
     exams.push({ id: examKey, examType: "TCF Canada", date: label, bookingUrl, examKey, legacyExamKey,
-      label, schedule, registrationWindow, registrationOpensAt, spotsLeft, statusClass, location, bookingAvailable });
+      label, schedule, registrationWindow, registrationOpensAt, spotsLeft, statusClass, location, bookingAvailable,
+      ...(vancouverBooking && { vancouverBooking }) });
   }
 
   const moreLinks = [...html.matchAll(/<a\b[^>]*>/gi)].map((match) => match[0]).filter((tag) => hasClass(tag, "dataShowMore"));
@@ -188,7 +227,7 @@ export async function scrapeTcfListing(options: ExamSelectorOptions = {}): Promi
     const res = await fetchImpl(nextUrl, { headers: HEADERS, redirect: "error", signal: AbortSignal.timeout(20_000) });
     if (!res.ok) throw new Error(`exam-selector listing fetch failed: ${res.status}`);
     if (res.url && new URL(res.url).origin !== new URL(listingPage).origin) throw new Error("exam-selector: unexpected listing origin");
-    const page = parseExamSelectorPage(await res.text(), nextUrl, options.keyPrefix);
+    const page = parseExamSelectorPage(await res.text(), nextUrl, options.keyPrefix, options.captureVancouverBookingIdentity);
     let added = 0;
     for (const exam of page.exams) {
       const existing = byKey.get(exam.examKey);
