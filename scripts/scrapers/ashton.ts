@@ -16,6 +16,14 @@ export interface Slot {
 
 const TCF_PAGE = "https://ashtontesting.ca/tcf-canada-test/";
 
+/** The centre explicitly paused registration; the old snapshot is not a fresh listing. */
+export class AshtonRegistrationPausedError extends Error {
+  constructor() {
+    super("Ashton: registration paused by the centre");
+    this.name = "AshtonRegistrationPausedError";
+  }
+}
+
 interface HtmlElement { tag: string; attrs: string; start: number; contentStart: number; contentEnd: number; end: number }
 function attribute(attrs: string, name: string): string | undefined {
   const attributes = /([^\s=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/g;
@@ -73,12 +81,25 @@ export function parseAshton(html: string): Slot[] {
   visible += clean.slice(offset);
   const visibleElements = elements(visible);
   const picker = visibleElements.find(item => item.tag === "div" && classes(item.attrs).includes("tcf-radio-picker"));
+  const select = visibleElements.find(item => item.tag === "select" && attribute(item.attrs, "name") === "form_fields[exma_date]");
+  const visibleText = visible.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  const registrationHeading = visibleElements.some(item => item.tag === "h2"
+    && /^TCF Canada Exam Registration$/i.test(visible.slice(item.contentStart, item.contentEnd)
+      .replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()));
+  if (registrationHeading && /\bTCF EXAM REGISTRATION IS CURRENTLY PAUSED\. PLEASE CHECK BACK LATER\./i.test(visibleText)) {
+    // On Nov 17 the official page had a dedicated visible notice and no form.
+    // Contradictory markup must not suppress a scrape failure or emit stale dates.
+    if (picker || select || visibleElements.some(item => item.tag === "form" || item.tag === "select")
+      || /\bDate of the session\b/i.test(visibleText)) {
+      throw new Error("Ashton: pause notice conflicts with visible registration markup");
+    }
+    throw new AshtonRegistrationPausedError();
+  }
   if (picker) {
     const content = visible.slice(picker.contentStart, picker.contentEnd);
     if (!/<label\b/i.test(content)) throw new Error("Ashton: unrecognized visible date picker");
     return parseRadioPicker(content);
   }
-  const select = visibleElements.find(item => item.tag === "select" && attribute(item.attrs, "name") === "form_fields[exma_date]");
   if (select) return parseDateSelect(visible.slice(select.contentStart, select.contentEnd));
 
   // Observed October 9 closed state: the form and stale FULL picker are hidden
@@ -89,7 +110,6 @@ export function parseAshton(html: string): Slot[] {
     && attribute(item.attrs, "name") === "form_fields[exma_date]"
     && hiddenRanges.some(range => range.start <= item.start && range.end >= item.end)
     && /^\s*<option\b[^>]*>\s*<\/option>\s*$/i.test(clean.slice(item.contentStart, item.contentEnd)));
-  const visibleText = visible.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
   if (hasEmptyHiddenSelect && /TCF Canada Exam Registration/i.test(visibleText)
     && /ADDITIONAL EXAM DATES FOR [A-Z ]+ WILL BE RELEASED BY [A-Z-]+/i.test(visibleText)) return [];
   throw new Error("Ashton: no recognized visible date control or verified closed state — structure may have changed");

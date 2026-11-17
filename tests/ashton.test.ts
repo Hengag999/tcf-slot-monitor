@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { parseAshton, scrapeAshton } from "../scripts/scrapers/ashton";
+import { AshtonRegistrationPausedError, parseAshton, scrapeAshton } from "../scripts/scrapers/ashton";
 
 const closed = readFileSync(new URL("./fixtures/ashton-hidden-registration.html", import.meta.url), "utf8");
 const picker = '<div class="tcf-radio-picker"><label><input type="radio" name="tcf_radio_date" value="Dec 5th 9.00 am">Dec 5th 9.00 am</label></div>';
@@ -62,4 +62,30 @@ test("Ashton production scraper uses the validated parser and bounded public fet
   }) as typeof fetch;
   assert.deepEqual(await scrapeAshton({ fetchImpl }), []);
   await assert.rejects(scrapeAshton({ fetchImpl: (async () => new Response("failed", { status: 503 })) as typeof fetch }), /503/);
+});
+
+const pauseHeading = '<h2 class="elementor-heading-title">TCF Canada Exam Registration</h2>';
+const pauseNotice = '<div class="elementor-widget-text-editor">TCF EXAM REGISTRATION IS CURRENTLY PAUSED. PLEASE CHECK BACK LATER.</div>';
+
+test("Ashton's official visible pause is distinct from an empty successful listing", async () => {
+  const paused = `<main>${pauseHeading}${pauseNotice}</main>`;
+  assert.throws(() => parseAshton(paused), AshtonRegistrationPausedError);
+  assert.throws(() => parseAshton(paused + `<div ${allHidden}>${picker}</div>`), AshtonRegistrationPausedError);
+  const fetchImpl = (async () => new Response(paused)) as typeof fetch;
+  await assert.rejects(scrapeAshton({ fetchImpl }), AshtonRegistrationPausedError);
+});
+
+test("hidden, missing-context and contradictory pause text stays fail-closed", () => {
+  const rescore = '<p>TCF has temporarily suspended its re-scoring service.</p>';
+  for (const html of [
+    pauseNotice, pauseHeading + rescore, pauseHeading + `<!--${pauseNotice}-->`,
+    pauseHeading + `<script>const notice = '${pauseNotice}';</script>`,
+    pauseHeading + `<div ${allHidden}>${pauseNotice}</div>`,
+    pauseHeading + pauseNotice + select,
+    pauseHeading + pauseNotice + picker,
+    pauseHeading + pauseNotice + '<form><select name="new_date"><option>Dec 21</option></select></form>',
+  ]) {
+    assert.throws(() => parseAshton(html), (error: unknown) =>
+      error instanceof Error && !(error instanceof AshtonRegistrationPausedError) && /^Ashton:/.test(error.message));
+  }
 });

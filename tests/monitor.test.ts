@@ -118,6 +118,15 @@ test("configured Ashton alerts for added dates while others remain open and neve
     await assert.rejects(runMonitor([source], false, io), /ashton \(scrape\)/);
     assert.deepEqual(stored.map(slot => slot.date), [newDate, oldDate]);
     assert.deepEqual(writes, [true, false]);
+    html = '<h2>TCF Canada Exam Registration</h2><div>TCF EXAM REGISTRATION IS CURRENTLY PAUSED. PLEASE CHECK BACK LATER.</div>';
+    await runMonitor([source], false, io);
+    await runMonitor([source], false, io);
+    assert.deepEqual(stored.map(slot => slot.date), [newDate, oldDate]);
+    assert.deepEqual(writes, [true, false]);
+    html = listing([oldDate, newDate]);
+    await runMonitor([source], false, io);
+    assert.deepEqual(delivered, [[newDate]]);
+    assert.deepEqual(writes, [true, false, false]);
     html = listing([]);
     await runMonitor([source], false, io);
     html = listing([oldDate]);

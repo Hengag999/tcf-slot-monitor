@@ -3,7 +3,7 @@ import { scrapeTorontoComputer, scrapeTorontoPaper, TorontoPaperChallengeError, 
 import { scrapeCalgary } from "./scrapers/calgary";
 import { scrapeHalifax } from "./scrapers/halifax";
 import { scrapeOttawa } from "./scrapers/ottawa";
-import { scrapeAshton } from "./scrapers/ashton";
+import { AshtonRegistrationPausedError, scrapeAshton } from "./scrapers/ashton";
 import { scrapeNorthYork } from "./scrapers/northyork";
 import { scrapeWinnipeg, WINNIPEG_PAGE } from "./scrapers/winnipeg";
 import { scrapeMontrealAf } from "./scrapers/montrealAf";
@@ -283,6 +283,12 @@ export async function runMonitor(
           failures.push(`${source} (health state)`);
           results.push({ source, status: "HEALTH STATE FAILED — availability state preserved" });
         }
+        continue;
+      }
+      if (source === "ashton" && err instanceof AshtonRegistrationPausedError) {
+        // Do not turn a temporary site-wide pause into a fresh sold-out snapshot.
+        console.log("[ashton] Official registration pause; availability state preserved");
+        results.push({ source, status: "PAUSED — centre paused registration; state preserved" });
         continue;
       }
       console.error(`[${source}] Scraper error, skipping:`, err);

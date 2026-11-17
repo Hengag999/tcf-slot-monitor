@@ -7,7 +7,7 @@
 | **Page(s)** | `https://ashtontesting.ca/tcf-canada-test/` |
 | **Discord** | #ashton (webhook "Ashton Bot", verified October 13 audit) |
 | **DB key** | city=`ashton`, exam_type=`TCF Canada` |
-| **Status** | October 13 deep audit: current registration is closed, with the same mid-October release notice; no alternate bookable source found. Historical September checks had multi-hour gaps, so earlier complete coverage cannot be certified. See the [October 13 audit](../health-assessment-2026-10-13-ashton.md). |
+| **Status** | November 17: the official registration page explicitly says registration is paused. Treat this separately from a successfully scraped empty date listing. |
 
 ## How it works
 - Alert for date/time labels absent from the previous complete successful
@@ -29,6 +29,11 @@
 - The observed fully hidden, empty registration form is accepted as closed only
   alongside the visible TCF registration heading and additional-date release
   notice. Unexplained hidden forms or unknown control shapes throw.
+- An explicit, visible registration-pause notice with the registration heading
+  and no visible registration form/date controls is reported as **PAUSED**.
+  The last availability snapshot and notification baseline are preserved
+  without an alert; unchanged dates do not replay when the centre resumes.
+  A contradictory form or an unrecognized response still fails closed.
 
 ## Known failure modes / gotchas
 - **Picker block removed when no sessions exist** (FIXED 2026-07-13). The site
@@ -46,6 +51,12 @@
   reason.
 
 ## Incident log
+- **2026-11-17** — The canonical page removed the registration controls and
+  explicitly announced a pause. The old parser reported an unknown layout
+  while preserving state. The added pause classification is intentionally
+  narrow: neither the rescore notice nor hidden text qualifies, and a visible
+  form conflicting with the pause still raises a scraper error. Verified
+  against the captured public page and offline regression coverage.
 - **2026-10-13** — Browser, public source/scripts, official FAQs, an older test
   page, production logs, read-only state, and actual Discord history agree that
   no current date is bookable. The FAQ says dates normally release mid-month.
