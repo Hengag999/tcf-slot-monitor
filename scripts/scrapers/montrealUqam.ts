@@ -83,7 +83,12 @@ export function parseUqamCalendar(html: string, now = new Date()) {
     const cells = elements(row, /<td\b[^>]*>([\s\S]*?)<\/td>/gi).map(text);
     if (cells.length !== 4) invalid('incomplete calendar row');
     const [dateText, test, deadlineText, status] = cells;
-    const date = frenchDate(dateText, true), deadline = frenchDate(deadlineText, false);
+    // UQAM puts an explicit one-seat advisory after the deadline on an open row.
+    // Other suffixes remain unknown; the authoritative status and date checks still apply.
+    const deadlineValue = status === 'Ouvert'
+      ? deadlineText.replace(/ 1 place disponible seulement!$/i, '')
+      : deadlineText;
+    const date = frenchDate(dateText, true), deadline = frenchDate(deadlineValue, false);
     if (!['TCF Canada', 'TCF Québec'].includes(test) || !['Ouvert', 'Fermé'].includes(status)
       || deadline > date || (status === 'Ouvert' && /<(?:s|del|strike)\b|text-decoration[^;]*line-through/i.test(row))) invalid('unrecognized or contradictory calendar row');
     const key = `${test}/${date}`;

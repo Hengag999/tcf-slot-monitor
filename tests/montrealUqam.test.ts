@@ -86,3 +86,17 @@ test('UQAM diagnostics distinguish hidden and duplicate calendars without weaken
   assert.throws(() => parseUqamCalendar(duplicates, now));
   assert.deepEqual(parseUqamCalendar(page, now).map(slot => slot.date), ['2026-12-04', '2027-01-15', '2027-02-05']);
 });
+
+test('UQAM accepts the observed one-seat advisory only on an open deadline', () => {
+  const annotated = page.replace('20 novembre 2026</td>', '20 novembre 2026 <strong> 1 place disponible seulement!</strong></td>');
+  assert.notEqual(annotated, page);
+  assert.deepEqual(parseUqamCalendar(annotated, new Date('2026-11-21T04:59:00Z')), parseUqamCalendar(page, new Date('2026-11-21T04:59:00Z')));
+  assert.deepEqual(parseUqamCalendar(annotated, new Date('2026-11-21T05:00:00Z')).map(slot => slot.date), ['2027-01-15', '2027-02-05']);
+  for (const unknown of [
+    annotated.replace('1 place disponible seulement!', 'inscriptions à confirmer'),
+    annotated.replace('20 novembre 2026', '35 novembre 2026'),
+    annotated.replace('Vendredi 4 décembre 2026', 'Vendredi 4 décembre 2026 1 place disponible seulement!'),
+    annotated.replace('>Ouvert<', '>Fermé<'),
+    annotated.replace('Vendredi 4 décembre 2026', '<s>Vendredi 4 décembre 2026</s>'),
+  ]) assert.throws(() => parseUqamCalendar(unknown, now), /registration availability unknown/);
+});
