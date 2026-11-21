@@ -84,13 +84,13 @@ function isAnnouncementOnly(rest: string): boolean {
   return true;
 }
 
-function isSoldOutNotice(rest: string, registrationLink: string): boolean {
+function noticeWithValidatedAdvice(rest: string, registrationLink: string): string | null {
   // The November 8 card replaces the date list with a complete sold-out
   // notice. A separate, explicitly titled card contains registration advice,
   // not availability. Do not let partial/unknown text clear the saved state.
   const information = [...rest.matchAll(/<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]\s*>/gi)]
     .filter(heading => /^Important Information After Completing Your Registration and Payment$/i.test(text(heading[1])));
-  if (information.length > 1) return false;
+  if (information.length > 1) return null;
   if (information.length) {
     // Validate the entire advice suffix too: an extra session card or changed
     // availability after this heading must not be silently discarded.
@@ -108,16 +108,51 @@ function isSoldOutNotice(rest: string, registrationLink: string): boolean {
     const sameDayAdvice = advice.replace(" Identification:",
       " All the 4 skills will be done in the same day of the exam. Identification:");
     const actualAdvice = text(rest.slice(information[0].index)).replace(/\s+\./g, ".");
-    if (actualAdvice !== advice && actualAdvice !== sameDayAdvice) return false;
+    if (actualAdvice !== advice && actualAdvice !== sameDayAdvice) return null;
   }
   const notice = rest.slice(0, information[0]?.index);
-  if (!notice.includes(registrationLink)) return false;
+  return notice.includes(registrationLink) ? notice : null;
+}
+
+function isSoldOutNotice(notice: string): boolean {
   const match = text(notice).match(/^NO MU(?:L)?TIPLE REGISTRATIONS FOR THE SAME CANDIDATE!\s+All the sessions offered in ([a-z]+) and ([a-z]+) (20\d{2}) are SOLD OUT\s*\.\s+New dates will be announced soon!\s+Thank you for your patience!\s+No refund or deferment is possible\. Cancellations for climatic or personal reasons are not possible\.\s+Registration(?: Registration)?$/i);
   if (!match) return false;
   const firstMonth = MONTHS.findIndex(month => month.toLowerCase() === match[1].toLowerCase());
   const lastMonth = MONTHS.findIndex(month => month.toLowerCase() === match[2].toLowerCase());
   // These are the scope of the closure, never exam dates or reminder times.
   return firstMonth >= 0 && lastMonth > firstMonth;
+}
+
+// The November 21 card lists new dated sittings after a past sold-out period.
+function newDatesAfterSoldOut(notice: string): Slot[] | null {
+  if (/<(?:template|noscript|s|del|strike)\b/i.test(notice)) return null;
+  const blocks = notice.replace(/\s+/g, " ")
+    .replace(/<\/?(?:h[1-6]|p|div|li|ol|ul)\b[^>]*>|<br\b[^>]*>/gi, "\n")
+    .split("\n");
+  const lines = blocks.map(block => ({ plain: text(block), html: block })).filter(line => line.plain);
+  const soldOut = lines.slice(0, 2).map(line => line.plain).join(" ")
+    .match(/^NO MU(?:L)?TIPLE REGISTRATIONS FOR THE SAME CANDIDATE!\s+All the sessions offered in ([a-z]+) and ([a-z]+) (20\d{2}) are SOLD OUT\s*\.$/i);
+  if (!soldOut || lines[2]?.plain !== "New dates are:") return null;
+  const firstMonth = MONTHS.findIndex(month => month.toLowerCase() === soldOut[1].toLowerCase());
+  const lastMonth = MONTHS.findIndex(month => month.toLowerCase() === soldOut[2].toLowerCase());
+  if (firstMonth < 0 || lastMonth <= firstMonth) return null;
+  const footer = lines.findIndex(line => line.plain === "Thank you for your patience!");
+  if (footer <= 3 || !/^Thank you for your patience! No refund or deferment is possible\. Cancellations for climatic or personal reasons are not possible\. Registration(?: Registration)?$/.test(lines.slice(footer).map(line => line.plain).join(" "))) return null;
+
+  const seen = new Set<string>();
+  return lines.slice(3, footer).map(line => {
+    // The first observed year was split by a formatting span (20</span>27).
+    // Remove only span/strong wrappers in recognized date rows, not in banners.
+    const date = parseDate(text(line.html.replace(/<\/?(?:span|strong)\b[^>]*>/gi, "")));
+    const parts = /^([a-z]+) \d{1,2}, (20\d{2})$/i.exec(date);
+    if (!parts || (Number(parts[2]) * 12 + MONTHS.indexOf(parts[1])) <= (Number(soldOut[3]) * 12 + lastMonth)) {
+      throw new Error("Winnipeg: new sitting does not follow the explicit sold-out period; state must be preserved");
+    }
+    if (seen.has(date)) throw new Error("Winnipeg: duplicate session date is ambiguous");
+    seen.add(date);
+    return { id: `winnipeg-${date.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+      examType: "TCF Canada", date, bookingUrl: WINNIPEG_REGISTRATION };
+  });
 }
 
 function publishedClock(value: string): string {
@@ -205,7 +240,12 @@ export function parseWinnipeg(html: string): Slot[] {
 
   const start = titles[0].index! + titles[0][0].length;
   const rest = section.slice(start);
-  if (isSoldOutNotice(rest, validLinks[0][0])) return [];
+  const notice = noticeWithValidatedAdvice(rest, validLinks[0][0]);
+  if (notice !== null) {
+    if (isSoldOutNotice(notice)) return [];
+    const newDates = newDatesAfterSoldOut(notice);
+    if (newDates !== null) return newDates;
+  }
   const boundary = [...rest.matchAll(/<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]\s*>/gi)]
     .find(heading => /^(?:Next dates will be announced on|Important information)$/i.test(text(heading[1])));
   if (!boundary) return isAnnouncementOnly(rest) ? [] : publishedDateList(rest);

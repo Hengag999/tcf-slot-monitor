@@ -414,3 +414,27 @@ test("Winnipeg source errors never become an empty snapshot and do not leak raw 
   failedBody.text = async () => { throw new Error("private body diagnostic"); };
   await assert.rejects(scrapeWinnipeg({ fetchImpl: async () => failedBody }), { message: "Winnipeg: public listing body failed or timed out" });
 });
+
+test("Winnipeg recognizes dated January listings beside the old sold-out notice, with no assumed seats", () => {
+  const html = readFileSync(new URL("./fixtures/winnipeg-new-dates-2026-11-21.html", import.meta.url), "utf8");
+  const slots = parseWinnipeg(html);
+  assert.deepEqual(slots.map(slot => slot.date), ["January 22, 2027", "January 29, 2027"]);
+  assert.ok(slots.every(slot => !Object.hasOwn(slot, "availableSeats") && slot.bookingUrl === WINNIPEG_REGISTRATION));
+  const notification = formatSlotNotification("Winnipeg", "TCF Canada", slots, { kind: "published-availability", sourceUrl: WINNIPEG_PAGE, caveat: "" });
+  assert.match(notification, /余位未披露/);
+  for (const changed of [
+    html.replace("New dates are:", "New dates to be announced:"),
+    html.replace("Jan. 29, 2027", "Jan. 22, 2027"),
+    html.replace("Jan. 29, 2027", "Jan. 29"),
+    html.replace("Jan. 29, 2027", "Dec. 29, 2026"),
+    html.replace("Jan. 29, 2027", "Jan. 32, 2027"),
+    html.replace("Jan. 29, 2027", "Jan. 29, 2027 (waitlist only)"),
+    html.replace("Thank you for your patience!", "Waitlist only"),
+    html.replace("You must bring your passport", "No dates are available. You must bring your passport"),
+    html.replace("<p><strong><span style=\"background-color: #f6dfdf;\">", "<p hidden><strong><span style=\"background-color: #f6dfdf;\">"),
+    html.replace(WINNIPEG_REGISTRATION, "https://unrelated.example/"),
+  ]) {
+    assert.notEqual(changed, html);
+    assert.throws(() => parseWinnipeg(changed), /Winnipeg:/);
+  }
+});
