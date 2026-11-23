@@ -123,7 +123,7 @@ function isSoldOutNotice(notice: string): boolean {
   return firstMonth >= 0 && lastMonth > firstMonth;
 }
 
-// The November 21 card lists new dated sittings after a past sold-out period.
+// November 21–23: the card lists later sittings, with or without explicit seat status.
 function newDatesAfterSoldOut(notice: string): Slot[] | null {
   if (/<(?:template|noscript|s|del|strike)\b/i.test(notice)) return null;
   const blocks = notice.replace(/\s+/g, " ")
@@ -136,22 +136,30 @@ function newDatesAfterSoldOut(notice: string): Slot[] | null {
   const firstMonth = MONTHS.findIndex(month => month.toLowerCase() === soldOut[1].toLowerCase());
   const lastMonth = MONTHS.findIndex(month => month.toLowerCase() === soldOut[2].toLowerCase());
   if (firstMonth < 0 || lastMonth <= firstMonth) return null;
-  const footer = lines.findIndex(line => line.plain === "Thank you for your patience!");
-  if (footer <= 3 || !/^Thank you for your patience! No refund or deferment is possible\. Cancellations for climatic or personal reasons are not possible\. Registration(?: Registration)?$/.test(lines.slice(footer).map(line => line.plain).join(" "))) return null;
+  const disclaimer = "No refund or deferment is possible. Cancellations for climatic or personal reasons are not possible.";
+  const footer = lines.findIndex(line => line.plain === disclaimer);
+  if (footer <= 3 || !/^Registration(?: Registration)?$/.test(lines.slice(footer + 1).map(line => line.plain).join(" "))) return null;
+  // The dated sold-out card drops the courtesy line, not the registration
+  // boundary. Do not ignore any other text between the dates and that boundary.
+  const end = footer - Number(lines[footer - 1].plain === "Thank you for your patience!");
+  if (end <= 3) return null;
 
   const seen = new Set<string>();
-  return lines.slice(3, footer).map(line => {
+  return lines.slice(3, end).flatMap(line => {
     // The first observed year was split by a formatting span (20</span>27).
     // Remove only span/strong wrappers in recognized date rows, not in banners.
-    const date = parseDate(text(line.html.replace(/<\/?(?:span|strong)\b[^>]*>/gi, "")));
+    const row = text(line.html.replace(/<\/?(?:span|strong)\b[^>]*>/gi, ""));
+    const { date, seats } = row.includes("(") ? parseSession(row) : { date: parseDate(row), seats: undefined };
     const parts = /^([a-z]+) \d{1,2}, (20\d{2})$/i.exec(date);
     if (!parts || (Number(parts[2]) * 12 + MONTHS.indexOf(parts[1])) <= (Number(soldOut[3]) * 12 + lastMonth)) {
       throw new Error("Winnipeg: new sitting does not follow the explicit sold-out period; state must be preserved");
     }
     if (seen.has(date)) throw new Error("Winnipeg: duplicate session date is ambiguous");
     seen.add(date);
-    return { id: `winnipeg-${date.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
-      examType: "TCF Canada", date, bookingUrl: WINNIPEG_REGISTRATION };
+    if (seats === 0) return [];
+    return [{ id: `winnipeg-${date.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+      examType: "TCF Canada", date, bookingUrl: WINNIPEG_REGISTRATION,
+      ...(seats === undefined ? {} : { availableSeats: seats }) }];
   });
 }
 

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { bookableEdmontonSlots, EDMONTON_LISTING_PAGE, scrapeEdmontonExams } from "../scripts/scrapers/edmonton";
@@ -82,4 +83,27 @@ test("current entry point follows Show More and keeps morning/afternoon identiti
   assert.notEqual(rows[0].examKey, rows[1].examKey);
   const [available] = bookableEdmontonSlots(rows, NOW);
   assert.equal(available.date, "TCF Canada - November 2*");
+});
+
+const EMPTY_ROW = '<tr><td colspan="7">\nNo available exams found.\n</td></tr>';
+const EMPTY_HEADER = '<tr><th>Exam</th><th>Schedules</th><th>Registration Dates</th><th>Location</th><th>Spots left</th><th>Price</th><th>Bookings</th></tr>';
+const emptyTable = (body: string) => `<table id="s8-datatable1" class="es-exams-table">${body}</table>`;
+
+test("Edmonton's exact first-page empty notice clears to zero, but malformed or mixed pages fail", async (t) => {
+  let html = readFileSync(new URL("./fixtures/edmonton-empty-2026-11-23.html", import.meta.url), "utf8");
+  t.mock.method(globalThis, "fetch", async () => new Response(html));
+  assert.deepEqual(await scrapeEdmontonExams(), []);
+  for (const bad of [
+    emptyTable(EMPTY_HEADER + EMPTY_ROW.replace("available", "additional")),
+    emptyTable(EMPTY_HEADER + EMPTY_ROW.replace('"7"', '"6"')),
+    emptyTable(EMPTY_HEADER + EMPTY_ROW.replace("found.", "found.<a>Book Now</a>")),
+    emptyTable(EMPTY_HEADER + EMPTY_ROW + row("TCF Canada - November 2", "Written Monday", '<span class="es-status es-status-closed">Closed</span>')),
+    emptyTable(EMPTY_HEADER.replace("<th>Bookings</th>", "") + EMPTY_ROW),
+    emptyTable(EMPTY_HEADER + EMPTY_ROW).replace("<table ", "<table hidden "),
+    emptyTable(EMPTY_HEADER + EMPTY_ROW) + emptyTable(EMPTY_HEADER + EMPTY_ROW),
+    emptyTable(EMPTY_HEADER + EMPTY_ROW) + '<a class="dataShowMore" href="?page=2">Show More</a>',
+  ]) {
+    html = bad;
+    await assert.rejects(scrapeEdmontonExams(), /unrecognized data row markup/);
+  }
 });

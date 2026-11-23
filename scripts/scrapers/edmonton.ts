@@ -17,7 +17,7 @@ export const EDMONTON_LISTING_PAGE = "https://www.afedmonton.com/en/exams/tcf/";
 
 /** All listed TCF Canada exams, including closed rows and future openings. */
 export async function scrapeEdmontonExams(): Promise<ExamSelectorRow[]> {
-  const rows = await scrapeTcfListing({ url: EDMONTON_LISTING_PAGE, keyPrefix: "edmonton" });
+  const rows = await scrapeTcfListing({ url: EDMONTON_LISTING_PAGE, keyPrefix: "edmonton", allowEdmontonEmptyNotice: true });
   const exams = rows.filter((row) => /\btcf[\s-]*canada\b/i.test(row.label));
   console.log(`[edmonton] ${exams.length} listed TCF Canada exam(s)`);
   return exams;

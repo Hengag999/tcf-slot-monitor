@@ -438,3 +438,24 @@ test("Winnipeg recognizes dated January listings beside the old sold-out notice,
     assert.throws(() => parseWinnipeg(changed), /Winnipeg:/);
   }
 });
+
+test("Winnipeg accepts the captured dated sold-out card and detects an explicit reopening", async () => {
+  const html = readFileSync(new URL("./fixtures/winnipeg-dated-sold-out-2026-11-23.html", import.meta.url), "utf8");
+  assert.deepEqual(await scrapeWinnipeg({fetchImpl: async () => htmlResponse(html)}), []);
+  const reopened = html.replace(/(Jan\. 29, 2027[^\n]*?)\(Sold\s+out\)/, "$1(2 spots available)");
+  assert.notEqual(reopened, html);
+  assert.deepEqual(parseWinnipeg(reopened).map(slot => [slot.id, slot.date, slot.availableSeats]), [
+    ["winnipeg-january-29-2027", "January 29, 2027", 2],
+  ]);
+
+  for (const changed of [
+    html.replace(/(Jan\. 29, 2027[^\n]*?)\(Sold\s+out\)/, "$1(waitlist only)"),
+    reopened.replace("Jan. 27, 2027", "Jan. 29, 2027"),
+    html.replace("Jan. 29, 2027", "Dec. 29, 2026"),
+    html.replace("Cancellations for climatic or personal reasons are not possible.", "Unknown status"),
+    html.replace("All the 4 skills will be done in the same day of the exam.", "Additional dates available"),
+  ]) {
+    assert.notEqual(changed, html);
+    assert.throws(() => parseWinnipeg(changed), /Winnipeg:/);
+  }
+});

@@ -26,6 +26,7 @@ export interface ExamSelectorOptions {
   keyPrefix?: string;
   fetchImpl?: typeof fetch;
   captureVancouverBookingIdentity?: boolean;
+  allowEdmontonEmptyNotice?: boolean;
 }
 
 function decodeEntities(s: string): string {
@@ -101,15 +102,35 @@ export function parseExamSelectorPage(
   listingPage: string = LISTING_PAGE,
   keyPrefix = "tcf",
   captureVancouverBookingIdentity = false,
+  allowEdmontonEmptyNotice = false,
 ): { exams: ExamSelectorRow[]; nextUrl: string | null } {
-  const table = [...html.matchAll(/(<table\b[^>]*>)([\s\S]*?)<\/table>/gi)]
-    .find((match) => hasClass(match[1], "es-exams-table"));
+  const tables = [...html.matchAll(/(<table\b[^>]*>)([\s\S]*?)<\/table>/gi)]
+    .filter((match) => hasClass(match[1], "es-exams-table"));
+  const table = tables[0];
   if (!table) throw new Error("exam-selector: exam table not found — page structure may have changed");
 
   const exams: ExamSelectorRow[] = [];
   const allRows = [...table[2].matchAll(/(<tr\b[^>]*>)([\s\S]*?)<\/tr>/gi)];
   const rowMarkers = [...table[2].matchAll(/<tr\b[^>]*>/gi)];
   if (rowMarkers.length !== allRows.length) throw new Error("exam-selector: incomplete exam row markup");
+  // Accept only the exact observed empty Edmonton first-page table; malformed,
+  // mixed, and paginated notices must still preserve the previous snapshot.
+  const emptyNotice = allowEdmontonEmptyNotice
+    && listingPage === "https://www.afedmonton.com/en/exams/tcf/"
+    && tables.length === 1
+    && attr(table[1], "id") === "s8-datatable1"
+    && !/\shidden(?:\s|=|>)/i.test(table[1])
+    && attr(table[1], "aria-hidden")?.toLowerCase() !== "true"
+    && !/(?:display\s*:\s*none|visibility\s*:\s*hidden)/i.test(attr(table[1], "style") ?? "")
+    && allRows.length === 2
+    && [...allRows[0][2].matchAll(/<th\b[^>]*>([\s\S]*?)<\/th>/gi)]
+      .map((match) => stripTags(match[1])).join("|") === "Exam|Schedules|Registration Dates|Location|Spots left|Price|Bookings"
+    && !/<td\b/i.test(allRows[0][2])
+    && /^<tr\s*>$/i.test(allRows[1][1])
+    && /^\s*<td\s+colspan=(?:"7"|'7')\s*>\s*No available exams found\.\s*<\/td>\s*$/i.test(allRows[1][2])
+    && ![...html.matchAll(/<a\b[^>]*>/gi)].some((match) => hasClass(match[0], "dataShowMore"));
+  if (emptyNotice) return { exams, nextUrl: null };
+
   // Headers and an empty table are valid. Data rows with a changed class must
   // not disappear from the snapshot merely because the old selector misses.
   for (const row of allRows.filter((match) => !hasClass(match[1], "tableRow"))) {
@@ -227,7 +248,7 @@ export async function scrapeTcfListing(options: ExamSelectorOptions = {}): Promi
     const res = await fetchImpl(nextUrl, { headers: HEADERS, redirect: "error", signal: AbortSignal.timeout(20_000) });
     if (!res.ok) throw new Error(`exam-selector listing fetch failed: ${res.status}`);
     if (res.url && new URL(res.url).origin !== new URL(listingPage).origin) throw new Error("exam-selector: unexpected listing origin");
-    const page = parseExamSelectorPage(await res.text(), nextUrl, options.keyPrefix, options.captureVancouverBookingIdentity);
+    const page = parseExamSelectorPage(await res.text(), nextUrl, options.keyPrefix, options.captureVancouverBookingIdentity, options.allowEdmontonEmptyNotice);
     let added = 0;
     for (const exam of page.exams) {
       const existing = byKey.get(exam.examKey);
