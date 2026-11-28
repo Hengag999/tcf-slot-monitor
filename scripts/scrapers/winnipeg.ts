@@ -11,6 +11,15 @@ export interface Slot {
   endTime?: string;
 }
 
+/** A recognized calendar update, not a fresh availability snapshot. */
+export class WinnipegPublishedDatesError extends Error {
+  constructor(dates: readonly string[]) {
+    super("Winnipeg: dates published; availability unconfirmed");
+    this.dates = dates;
+  }
+  readonly dates: readonly string[];
+}
+
 export const WINNIPEG_PAGE = "https://www.afmanitoba.ca/en/exams/tcf/";
 export const WINNIPEG_REGISTRATION = `${WINNIPEG_PAGE}register-tcf-canada/`;
 const USER_AGENT = "TCF-Slot-Monitor/1.0 (+https://github.com/Hengag999/tcf-slot-monitor)";
@@ -144,11 +153,24 @@ function newDatesAfterSoldOut(notice: string): Slot[] | null {
   const end = footer - Number(lines[footer - 1].plain === "Thank you for your patience!");
   if (end <= 3) return null;
 
+  // November/December rollover: the centre published January dates with no
+  // year or stock claim. Validate the entire list, but never use it to clear
+  // the preceding availability snapshot or to send an alert.
+  const rows = lines.slice(3, end).map(line => text(line.html
+    .replace(/<\/?(?:span|strong)\b[^>]*>/gi, "")));
+  if (firstMonth === 10 && lastMonth === 11
+    && rows.every(row => /^Jan(?:uary)?\.?\s*\d{1,2}\s*(?:st|nd|rd|th)?$/i.test(row))) {
+    const dates = rows.map(row => parseDate(row.replace(/(\d)\s+(st|nd|rd|th)$/i, "$1$2")));
+    if (new Set(dates).size !== dates.length) {
+      throw new Error("Winnipeg: duplicate session date is ambiguous");
+    }
+    throw new WinnipegPublishedDatesError(dates);
+  }
+
   const seen = new Set<string>();
-  return lines.slice(3, end).flatMap(line => {
+  return rows.flatMap(row => {
     // The first observed year was split by a formatting span (20</span>27).
     // Remove only span/strong wrappers in recognized date rows, not in banners.
-    const row = text(line.html.replace(/<\/?(?:span|strong)\b[^>]*>/gi, ""));
     const { date, seats } = row.includes("(") ? parseSession(row) : { date: parseDate(row), seats: undefined };
     const parts = /^([a-z]+) \d{1,2}, (20\d{2})$/i.exec(date);
     if (!parts || (Number(parts[2]) * 12 + MONTHS.indexOf(parts[1])) <= (Number(soldOut[3]) * 12 + lastMonth)) {
@@ -313,5 +335,12 @@ export async function scrapeWinnipeg(options: { fetchImpl?: typeof fetch } = {})
 
 if (process.argv[1]?.endsWith("winnipeg.ts")) {
   scrapeWinnipeg().then(slots => console.log(JSON.stringify(slots, null, 2)))
-    .catch(error => { console.error(error); process.exitCode = 1; });
+    .catch(error => {
+      if (error instanceof WinnipegPublishedDatesError) {
+        console.log(JSON.stringify({ status: "published_availability_unconfirmed", dates: error.dates }, null, 2));
+        return;
+      }
+      console.error(error);
+      process.exitCode = 1;
+    });
 }

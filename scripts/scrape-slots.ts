@@ -5,7 +5,7 @@ import { scrapeHalifax } from "./scrapers/halifax";
 import { scrapeOttawa } from "./scrapers/ottawa";
 import { AshtonRegistrationPausedError, scrapeAshton } from "./scrapers/ashton";
 import { scrapeNorthYork } from "./scrapers/northyork";
-import { scrapeWinnipeg, WINNIPEG_PAGE } from "./scrapers/winnipeg";
+import { scrapeWinnipeg, WINNIPEG_PAGE, WinnipegPublishedDatesError } from "./scrapers/winnipeg";
 import { scrapeMontrealAf } from "./scrapers/montrealAf";
 import { scrapeMontrealMarieVictorin } from "./scrapers/montrealMarieVictorin";
 import { scrapeMontrealElc, ELC_EXAM_TYPE } from "./scrapers/montrealElc";
@@ -283,6 +283,11 @@ export async function runMonitor(
           failures.push(`${source} (health state)`);
           results.push({ source, status: "HEALTH STATE FAILED — availability state preserved" });
         }
+        continue;
+      }
+      if (source === "winnipeg" && err instanceof WinnipegPublishedDatesError) {
+        console.log(`[winnipeg] Dates published, availability unconfirmed: ${err.dates.join(", ")}; availability state preserved`);
+        results.push({ source, status: "PUBLISHED — availability unconfirmed; state preserved" });
         continue;
       }
       if (source === "ashton" && err instanceof AshtonRegistrationPausedError) {

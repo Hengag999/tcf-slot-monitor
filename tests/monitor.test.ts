@@ -253,6 +253,36 @@ test("Winnipeg sold-out recovery clears prior dates silently and unknown notices
   assert.deepEqual(writes, [false, false]);
 });
 
+test("Winnipeg's published-only rollover preserves availability and deduplication", async () => {
+  const [calendar, previous] = await Promise.all([
+    readFile(new URL("./fixtures/winnipeg-yearless-rollover-2026-11-28.html", import.meta.url), "utf8"),
+    readFile(new URL("./fixtures/winnipeg-next-sessions.html", import.meta.url), "utf8"),
+  ]);
+  let html = calendar;
+  const source = { ...createSources().find(source => source.key === "winnipeg")!, scrape: async () => parseWinnipeg(html) };
+  const initial = { city: "winnipeg", exam_type: "TCF Canada", slots: parseWinnipeg(previous) };
+  let row: StateRow = structuredClone(initial);
+  let writes = 0;
+  const io: MonitorDependencies = {
+    getPrevState: async () => [structuredClone(row)],
+    upsertState: async (city, exam_type, slots, notified) => {
+      assert.equal(notified, false);
+      writes++;
+      row = { city, exam_type, slots: structuredClone(slots) };
+    },
+    notifyDiscord: async () => assert.fail("no new confirmed availability"),
+    runRegistrationReminders: async () => assert.fail("not a reminder source"),
+  };
+  await runMonitor([source], false, io);
+  await runMonitor([source], false, io);
+  assert.equal(writes, 0);
+  assert.deepEqual(row, initial);
+  html = previous;
+  await runMonitor([source], false, io);
+  assert.equal(writes, 1);
+  assert.deepEqual(row, initial);
+});
+
 const t0 = Date.parse("2026-10-07T00:00:00Z");
 const minute = 60_000;
 const blockedPaper: CityConfig = { ...paper, scrape: async () => { throw new TorontoPaperChallengeError("known challenge"); } };

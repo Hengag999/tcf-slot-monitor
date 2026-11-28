@@ -267,3 +267,13 @@ formatting variants, and mutations covering changed/duplicate/misplaced advice,
 extra availability, hidden content and invalid page/link context. The complete
 captured public page parses as no published sessions; no year, date, reminder
 or seat count is inferred from the advice.
+
+## November 28 yearless January rollover
+
+The November/December sold-out card listed only January dates without an
+explicit year or seat status. A complete card in that narrowly recognized
+shape is reported as **published, availability unconfirmed** in workflow
+logs and the source-health summary. It does not refresh or erase the
+availability snapshot, rearm deduplication, or notify Discord. The monitor
+does not infer a year from the sold-out banner. Conflicting or malformed
+content continues to fail closed rather than being described as a valid calendar.

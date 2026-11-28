@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
-import { parseWinnipeg, scrapeWinnipeg, WINNIPEG_PAGE, WINNIPEG_REGISTRATION } from "../scripts/scrapers/winnipeg";
+import { parseWinnipeg, scrapeWinnipeg, WINNIPEG_PAGE, WINNIPEG_REGISTRATION, WinnipegPublishedDatesError } from "../scripts/scrapers/winnipeg";
 import { formatSlotNotification } from "../src/lib/discord";
 
 const observed = readFileSync(new URL("./fixtures/winnipeg-next-sessions.html", import.meta.url), "utf8");
@@ -457,5 +457,30 @@ test("Winnipeg accepts the captured dated sold-out card and detects an explicit 
   ]) {
     assert.notEqual(changed, html);
     assert.throws(() => parseWinnipeg(changed), /Winnipeg:/);
+  }
+});
+
+test("Winnipeg reports the observed yearless January rollover as published, not bookable", async () => {
+  const html = readFileSync(new URL("./fixtures/winnipeg-yearless-rollover-2026-11-28.html", import.meta.url), "utf8");
+  const published = (err: unknown) => {
+    assert.ok(err instanceof WinnipegPublishedDatesError);
+    assert.deepEqual(err.dates, ["January 20", "January 25", "January 26"]);
+    return true;
+  };
+  assert.throws(() => parseWinnipeg(html), published);
+  await assert.rejects(scrapeWinnipeg({fetchImpl: async () => htmlResponse(html)}), published);
+  assert.throws(() => parseWinnipeg(html.replace("Jan. 26</span></strong>th", "Jan. 26 </span></strong>th")), published);
+
+  for (const [from, to] of [
+    ["Jan.20th", "Jan.32nd"], ["Jan.20th", "Jan.25th"], ["Jan.20th", "December 20"],
+    ["Jan.20th", "Jan.20th (1 spot available)"], ["Jan.20th", "Jan.20th (Waitlist)"],
+    ["Jan.20th", '<span hidden>Jan.20th</span>'], ["Jan.20th", "Jan.20th<br>extra text"],
+    ["Jan.20th", "Jan.20th, 2027"], ["New dates are:", "New dates might be:"],
+    [WINNIPEG_REGISTRATION, "https://other.example/register"],
+  ]) {
+    const changed = html.replace(from, to);
+    assert.notEqual(changed, html);
+    assert.throws(() => parseWinnipeg(changed), (err: unknown) =>
+      err instanceof Error && /Winnipeg:/.test(err.message) && !(err instanceof WinnipegPublishedDatesError));
   }
 });
